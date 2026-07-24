@@ -1,149 +1,120 @@
 import tkinter as tk
 from tkinter import scrolledtext
-import socketio
+import requests
 import threading
-from groq import Groq
+import time
 
-sio = socketio.Client()
-CONV_ID = 'conv-1'
+SERVER_URL = "https://mon-serveur-chat.onrender.com"
 
-class IAOperatorGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Console IA Studio - Opérateur")
-        self.root.geometry("520x680")
-        self.root.configure(bg="#181825")
+# Stockage local : { username: { chatId: ..., messages: [] } }
+conversations = {}
+utilisateur_actif = None
 
-        self.typing_timer = None
-
-        header_frame = tk.Frame(root, bg="#1e1e2e")
-        header_frame.pack(fill=tk.X, ipadx=10, ipady=5)
-        header = tk.Label(header_frame, text="⚡ Console Opérateur IA", font=("Segoe UI", 13, "bold"), bg="#1e1e2e", fg="#cdd6f4")
-        header.pack(side=tk.LEFT, padx=10, pady=5)
-
-        api_frame = tk.Frame(root, bg="#181825")
-        api_frame.pack(fill=tk.X, padx=15, pady=(10, 5))
-        
-        api_label = tk.Label(api_frame, text="Clé API Groq :", font=("Segoe UI", 9), bg="#181825", fg="#a6adc8")
-        api_label.pack(side=tk.LEFT)
-        
-        self.api_entry = tk.Entry(api_frame, bg="#313244", fg="#a6e3a1", font=("Consolas", 9), show="*", insertbackground="white", borderwidth=0)
-        self.api_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
-
-        self.chat_display = scrolledtext.ScrolledText(root, wrap=tk.WORD, bg="#1e1e2e", fg="#cdd6f4", font=("Segoe UI", 10), state='disabled', borderwidth=0)
-        self.chat_display.pack(padx=15, pady=10, fill=tk.BOTH, expand=True)
-
-        self.status_label = tk.Label(root, text="Prêt.", font=("Segoe UI", 9, "italic"), bg="#181825", fg="#a6adc8")
-        self.status_label.pack(anchor="w", padx=15)
-
-        input_frame = tk.Frame(root, bg="#181825")
-        input_frame.pack(fill=tk.X, padx=15, pady=(5, 15))
-
-        self.msg_entry = tk.Entry(input_frame, bg="#313244", fg="#cdd6f4", font=("Segoe UI", 11), insertbackground="white", borderwidth=0)
-        self.msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
-        
-        # Événement quand l'opérateur tape du texte
-        self.msg_entry.bind("<Key>", self.on_typing)
-        self.msg_entry.bind("<Return>", lambda event: self.process_and_send())
-
-        send_btn = tk.Button(input_frame, text="Envoyer", command=self.process_and_send, bg="#89b4fa", fg="#11111b", font=("Segoe UI", 10, "bold"), activebackground="#b4befe", borderwidth=0, cursor="hand2")
-        send_btn.pack(side=tk.RIGHT, ipadx=10, ipady=4)
-
-        threading.Thread(target=self.connect_socket, daemon=True).start()
-
-    def on_typing(self, event):
-        if sio.connected:
-            sio.emit('typing', {'sender': 'assistant'})
-            if self.typing_timer:
-                self.root.after_cancel(self.typing_timer)
-            self.typing_timer = self.root.after(1000, self.stop_typing)
-
-    def stop_typing(self):
-        if sio.connected:
-            sio.emit('stop-typing', {'sender': 'assistant'})
-
-    def log(self, text, prefix=""):
-        self.chat_display.config(state='normal')
-        if prefix:
-            self.chat_display.insert(tk.END, prefix + "\n", "bold")
-        self.chat_display.insert(tk.END, text + "\n\n")
-        self.chat_display.config(state='disabled')
-        self.chat_display.yview(tk.END)
-
-    def connect_socket(self):
-        @sio.event
-        def connect():
-            self.log("Connecté au serveur avec succès.", "🟢 Système")
-
-        @sio.on('new-message')
-        def on_message(data):
-            msg = data.get('message', {})
-            sender = msg.get('sender')
-            text = msg.get('text', '')
-            
-            if sender == 'user':
-                self.log(text, "📩 Utilisateur :")
-                self.status_label.config(text="Prêt.", fg="#a6adc8")
-
-        @sio.on('user-typing')
-        def on_user_typing(data):
-            if data.get('sender') == 'user':
-                self.status_label.config(text="✏️ L'utilisateur est en train d'écrire...", fg="#f9e2af")
-
-        @sio.on('user-stop-typing')
-        def on_user_stop_typing(data):
-            if data.get('sender') == 'user':
-                self.status_label.config(text="Prêt.", fg="#a6adc8")
-
+def ecouter_visiteurs():
+    global utilisateur_actif
+    while True:
         try:
-            sio.connect('http://localhost:3000')
-            sio.wait()
-        except Exception as e:
-            self.log(f"Erreur de connexion : {e}", "🔴 Erreur")
+            res = requests.get(f"{SERVER_URL}/recuperer-questions", timeout=5)
+            if res.status_code == 200:
+                questions = res.json().get("questions", [])
+                for item in questions:
+                    u = item.get("username")
+                    cid = item.get("chatId")
+                    msg = item.get("message")
 
-    def correct_spelling(self, text, api_key):
-        try:
-            client = Groq(api_key=api_key)
-            prompt = f"Maintiens exactement le sens et le ton, mais corrige toutes les fautes d'orthographe et de grammaire du texte suivant. Ne réponds rien d'autre que le texte corrigé :\n\n{text}"
-            
-            completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2
-            )
-            return completion.choices[0].message.content.strip()
-        except Exception as e:
-            self.status_label.config(text=f"Erreur Groq: {e}", fg="#f38ba8")
-            return text
+                    if u not in conversations:
+                        conversations[u] = {"chatId": cid, "messages": []}
+                        liste_users.insert(tk.END, u)
+                    
+                    conversations[u]["chatId"] = cid
+                    conversations[u]["messages"].append((f"👤 [{u}]", msg))
 
-    def process_and_send(self):
-        self.stop_typing()
-        raw_text = self.msg_entry.get().strip()
-        api_key = self.api_entry.get().strip()
+                    # Si on est sur cet utilisateur, rafraîchir la vue
+                    if utilisateur_actif == u:
+                        afficher_messages_utilisateur(u)
+                    else:
+                        lbl_status.config(text=f"💬 Nouveau message de {u} !", fg="#f38ba8")
+        except Exception:
+            pass
+        time.sleep(1)
 
-        if not raw_text:
-            return
+def selectionner_utilisateur(event):
+    global utilisateur_actif
+    selection = liste_users.curselection()
+    if selection:
+        user = liste_users.get(selection[0])
+        utilisateur_actif = user
+        lbl_status.config(text=f"Discussion avec : {user}", fg="#a6e3a1")
+        afficher_messages_utilisateur(user)
 
-        final_text = raw_text
+def afficher_messages_utilisateur(user):
+    zone_chat.config(state=tk.NORMAL)
+    zone_chat.delete("1.0", tk.END)
+    for auteur, text in conversations[user]["messages"]:
+        tag = "user_tag" if "👤" in auteur else "nexus_tag"
+        zone_chat.insert(tk.END, f"\n{auteur} :\n", tag)
+        zone_chat.insert(tk.END, f" {text}\n", "msg_tag")
+    zone_chat.config(state=tk.DISABLED)
+    zone_chat.yview(tk.END)
 
-        if api_key:
-            self.status_label.config(text="✨ Correction par Groq en cours...", fg="#f9e2af")
-            self.root.update_idletasks()
-            final_text = self.correct_spelling(raw_text, api_key)
-            self.status_label.config(text="✅ Message corrigé et envoyé !", fg="#a6e3a1")
-        else:
-            self.status_label.config(text="⚠️ Envoyé sans correction", fg="#fab387")
+def repondre_en_tant_que_nexus():
+    global utilisateur_actif
+    texte = entree.get().strip()
+    if not texte or not utilisateur_actif:
+        return
 
-        sio.emit('send-message', {
-            'convId': CONV_ID,
-            'text': final_text,
-            'sender': 'assistant'
-        })
+    cid = conversations[utilisateur_actif]["chatId"]
+    conversations[utilisateur_actif]["messages"].append((f"🌐 [Nexus AI -> {utilisateur_actif}]", texte))
+    afficher_messages_utilisateur(utilisateur_actif)
+    entree.delete(0, tk.END)
 
-        self.log(final_text, "🤖 Réponse envoyée (IA) :")
-        self.msg_entry.delete(0, tk.END)
+    try:
+        payload = {"username": utilisateur_actif, "chatId": cid, "reponse": texte}
+        requests.post(f"{SERVER_URL}/repondre-humain", json=payload, timeout=5)
+    except Exception as e:
+        print("Erreur d'envoi :", e)
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = IAOperatorGUI(root)
-    root.mainloop()
+# --- Interface Panneau Secret Python ---
+fenetre = tk.Tk()
+fenetre.title("⚡ Panneau de Contrôle Multi-Users - Nexus AI")
+fenetre.geometry("700x550")
+fenetre.configure(bg="#1e1e2e")
+
+# Barre latérale (Utilisateurs)
+cadre_gauche = tk.Frame(fenetre, bg="#181825", width=200)
+cadre_gauche.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+
+lbl_users = tk.Label(cadre_gauche, text="Utilisateurs", bg="#181825", fg="#cdd6f4", font=("Segoe UI", 11, "bold"))
+lbl_users.pack(pady=10)
+
+liste_users = tk.Listbox(cadre_gauche, bg="#313244", fg="#cdd6f4", selectbackground="#6366f1", bd=0, font=("Segoe UI", 10))
+liste_users.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+liste_users.bind("<<ListboxSelect>>", selectionner_utilisateur)
+
+# Zone Droite (Chat)
+cadre_droite = tk.Frame(fenetre, bg="#1e1e2e")
+cadre_droite.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+lbl_status = tk.Label(cadre_droite, text="Sélectionne un utilisateur à gauche", bg="#1e1e2e", fg="#6c7086", font=("Segoe UI", 10, "bold"))
+lbl_status.pack(pady=5)
+
+zone_chat = scrolledtext.ScrolledText(cadre_droite, wrap=tk.WORD, bg="#181825", fg="#cdd6f4", font=("Segoe UI", 10), bd=0)
+zone_chat.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
+
+zone_chat.tag_config("user_tag", foreground="#89b4fa", font=("Segoe UI", 10, "bold"))
+zone_chat.tag_config("nexus_tag", foreground="#a6e3a1", font=("Segoe UI", 10, "bold"))
+zone_chat.tag_config("msg_tag", foreground="#cdd6f4")
+zone_chat.config(state=tk.DISABLED)
+
+cadre_saisie = tk.Frame(cadre_droite, bg="#1e1e2e")
+cadre_saisie.pack(fill=tk.X, pady=5)
+
+entree = tk.Entry(cadre_saisie, bg="#313244", fg="#cdd6f4", font=("Segoe UI", 11), bd=0)
+entree.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8, padx=(0, 5))
+entree.bind("<Return>", lambda e: repondre_en_tant_que_nexus())
+
+btn = tk.Button(cadre_saisie, text="Envoyer ➔", command=repondre_en_tant_que_nexus, bg="#6366f1", fg="white", font=("Segoe UI", 10, "bold"), bd=0, padx=15)
+btn.pack(side=tk.RIGHT, ipady=6)
+
+threading.Thread(target=ecouter_visiteurs, daemon=True).start()
+fenetre.mainloop()
