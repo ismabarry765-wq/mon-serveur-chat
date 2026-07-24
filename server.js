@@ -17,7 +17,7 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Nia AI</title>
+      <title>Nexus AI</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
         body { background-color: #f7f7f8; color: #353740; height: 100vh; display: flex; }
@@ -26,8 +26,8 @@ app.get('/', (req, res) => {
         .auth-box { background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #e5e5e5; width: 100%; max-width: 360px; text-align: center; }
         .auth-box h2 { margin-bottom: 20px; font-size: 1.5rem; }
         .auth-box input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #d9d9e3; border-radius: 8px; outline: none; }
-        .auth-box button { width: 100%; padding: 12px; background: #10a37f; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-bottom: 10px; }
-        .toggle-link { font-size: 0.85rem; color: #10a37f; cursor: pointer; text-decoration: underline; }
+        .auth-box button { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+        .toggle-link { font-size: 0.85rem; color: #6366f1; cursor: pointer; text-decoration: underline; }
 
         #app-screen { display: none; width: 100%; height: 100%; flex-direction: row; }
         .sidebar { width: 260px; background: #f0f0f0; border-right: 1px solid #e5e5e5; display: flex; flex-direction: column; padding: 12px; }
@@ -35,28 +35,34 @@ app.get('/', (req, res) => {
         .chat-list { flex: 1; overflow-y: auto; }
         .chat-item { padding: 10px; border-radius: 6px; cursor: pointer; font-size: 0.88rem; margin-bottom: 4px; }
         .chat-item:hover, .chat-item.active { background: #e3e3e3; }
-        .user-footer { border-top: 1px solid #d9d9e3; padding-top: 12px; display: flex; justify-content: space-between; }
-
+        .user-footer { border-top: 1px solid #d9d9e3; padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+        
         .main-chat { flex: 1; display: flex; flex-direction: column; background: #ffffff; }
-        .chat-header { height: 50px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; padding: 0 20px; font-weight: 600; }
+        .chat-header { height: 50px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; padding: 0 20px; font-weight: 600; justify-content: space-between; }
         .messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
         .msg-row { display: flex; gap: 12px; max-width: 800px; margin: 0 auto; width: 100%; }
         .avatar { width: 32px; height: 32px; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; flex-shrink: 0; }
         .avatar.user { background: #5436da; }
-        .avatar.nia { background: #10a37f; }
+        .avatar.nexus { background: #6366f1; }
         .msg-content { font-size: 0.95rem; line-height: 1.5; padding-top: 5px; }
         
         .input-container { padding: 20px; background: #ffffff; border-top: 1px solid #f0f0f0; display: flex; justify-content: center; }
         .input-box { width: 100%; max-width: 800px; position: relative; }
         .input-box input { width: 100%; padding: 14px 45px 14px 16px; border: 1px solid #d9d9e3; border-radius: 12px; outline: none; }
-        .input-box button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #10a37f; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; }
+        .input-box button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #6366f1; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; }
+
+        /* Modal Paramètres */
+        #settings-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 200; }
+        .modal-box { background: white; padding: 25px; border-radius: 12px; width: 320px; text-align: center; }
+        .modal-box h3 { margin-bottom: 15px; }
+        .modal-box button { width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
       </style>
     </head>
     <body>
 
       <div id="auth-screen">
         <div class="auth-box">
-          <h2 id="auth-title">Connexion à Nia</h2>
+          <h2 id="auth-title">Connexion à Nexus AI</h2>
           <input type="text" id="username" placeholder="Nom d'utilisateur">
           <input type="password" id="password" placeholder="Mot de passe">
           <button id="auth-btn" onclick="submitAuth()">Se connecter</button>
@@ -70,18 +76,29 @@ app.get('/', (req, res) => {
           <div class="chat-list" id="chat-list"></div>
           <div class="user-footer">
             <span id="logged-user-name" style="font-weight: 600;"></span>
-            <button style="background:none; border:none; color:red; cursor:pointer;" onclick="deconnexion()">Déconnexion</button>
+            <button style="background:none; border:none; color:#6366f1; cursor:pointer; font-weight:bold;" onclick="ouvrirParametres()">⚙️ Paramètres</button>
           </div>
         </div>
         <div class="main-chat">
-          <div class="chat-header">⚡ Nia AI</div>
+          <div class="chat-header">
+            <span>🌐 Nexus AI</span>
+          </div>
           <div class="messages-container" id="messages"></div>
           <div class="input-container">
             <div class="input-box">
-              <input type="text" id="prompt-input" placeholder="Envoyer un message à Nia..." onkeydown="if(event.key==='Enter') envoyerMessage()">
+              <input type="text" id="prompt-input" placeholder="Envoyer un message à Nexus AI..." onkeydown="if(event.key==='Enter') envoyerMessage()">
               <button onclick="envoyerMessage()">➔</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div id="settings-modal">
+        <div class="modal-box">
+          <h3>Paramètres du Compte</h3>
+          <button style="background:#e5e7eb; color:#374151;" onclick="deconnexion()">Se déconnecter</button>
+          <button style="background:#ef4444; color:white;" onclick="supprimerCompte()">Supprimer le compte</button>
+          <button style="background:none; color:#6b7280; margin-top:15px;" onclick="fermerParametres()">Fermer</button>
         </div>
       </div>
 
@@ -89,10 +106,23 @@ app.get('/', (req, res) => {
         let isLogin = true;
         let currentUser = null;
         let currentChatId = null;
+        const notifSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+
+        // Auto-login au chargement
+        window.onload = () => {
+          const savedUser = localStorage.getItem('nexus_user');
+          if (savedUser) {
+            currentUser = savedUser;
+            document.getElementById('logged-user-name').innerText = currentUser;
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('app-screen').style.display = 'flex';
+            chargerChats();
+          }
+        };
 
         function toggleAuthMode() {
           isLogin = !isLogin;
-          document.getElementById('auth-title').innerText = isLogin ? "Connexion à Nia" : "Inscription à Nia";
+          document.getElementById('auth-title').innerText = isLogin ? "Connexion à Nexus AI" : "Inscription à Nexus AI";
           document.getElementById('auth-btn').innerText = isLogin ? "Se connecter" : "S'inscrire";
           document.getElementById('toggle-auth').innerText = isLogin ? "Pas de compte ? S'inscrire" : "Déjà un compte ? Se connecter";
         }
@@ -112,6 +142,7 @@ app.get('/', (req, res) => {
 
           if(data.success) {
             currentUser = u;
+            localStorage.setItem('nexus_user', u);
             document.getElementById('logged-user-name').innerText = u;
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-screen').style.display = 'flex';
@@ -121,11 +152,26 @@ app.get('/', (req, res) => {
           }
         }
 
+        function ouvrirParametres() { document.getElementById('settings-modal').style.display = 'flex'; }
+        function fermerParametres() { document.getElementById('settings-modal').style.display = 'none'; }
+
         function deconnexion() {
+          localStorage.removeItem('nexus_user');
           currentUser = null;
           currentChatId = null;
+          fermerParametres();
           document.getElementById('auth-screen').style.display = 'flex';
           document.getElementById('app-screen').style.display = 'none';
+        }
+
+        async function supprimerCompte() {
+          if (!confirm("Voulez-vous vraiment supprimer définitivement votre compte ?")) return;
+          await fetch('/delete-account', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username: currentUser })
+          });
+          deconnexion();
         }
 
         async function chargerChats() {
@@ -174,7 +220,7 @@ app.get('/', (req, res) => {
           const container = document.getElementById('messages');
           const row = document.createElement('div');
           row.className = 'msg-row';
-          const avClass = sender === 'user' ? 'user' : 'nia';
+          const avClass = sender === 'user' ? 'user' : 'nexus';
           const avText = sender === 'user' ? 'U' : 'N';
           row.innerHTML = '<div class="avatar ' + avClass + '">' + avText + '</div><div class="msg-content">' + text + '</div>';
           container.appendChild(row);
@@ -202,7 +248,8 @@ app.get('/', (req, res) => {
             const res = await fetch('/recuperer-reponse/' + currentUser + '/' + currentChatId);
             const data = await res.json();
             if (data.reponse) {
-              afficherMessage('nia', data.reponse);
+              afficherMessage('nexus', data.reponse);
+              try { notifSound.play(); } catch(e){}
             }
           } catch(e) {}
         }, 1500);
@@ -224,6 +271,13 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if(users[username] && users[username] === password) return res.json({ success: true });
   res.json({ success: false, message: "Identifiants incorrects." });
+});
+
+app.post('/delete-account', (req, res) => {
+  const { username } = req.body;
+  delete users[username];
+  delete histories[username];
+  res.json({ success: true });
 });
 
 app.get('/chats/:username', (req, res) => {
@@ -267,7 +321,7 @@ app.post('/repondre-humain', (req, res) => {
   const list = histories[username] || [];
   const chat = list.find(c => c.id === chatId);
   if(chat) {
-    chat.messages.push({ sender: 'nia', text: reponse });
+    chat.messages.push({ sender: 'nexus', text: reponse });
   }
   reponsesHumain.push({ username, chatId, reponse });
   res.json({ success: true });
@@ -284,4 +338,4 @@ app.get('/recuperer-reponse/:username/:chatId', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur actif sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Nexus AI actif sur le port ${PORT}`));
