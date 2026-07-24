@@ -5,71 +5,124 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Stockage temporaire des messages
-let messages = [];
+let questionsWeb = [];
+let reponsesHumain = [];
 
-// 1. Interface Web pour les visiteurs
+// Interface Web "Nia" (Style ChatGPT + Sauvegarde automatique)
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html lang="fr">
     <head>
       <meta charset="UTF-8">
-      <title>Envoyer un message</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Nia - Assistant IA</title>
       <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; margin: 0; }
-        .box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        input { width: 80%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 5px; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #343541; color: #ececf1; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #202123; padding: 15px; text-align: center; font-size: 1.2rem; font-weight: bold; border-bottom: 1px solid #4d4d4f; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .message { padding: 12px 16px; border-radius: 8px; max-width: 80%; line-height: 1.5; }
+        .user { background-color: #343541; align-self: flex-end; border: 1px solid #565869; }
+        .nia { background-color: #444654; align-self: flex-start; border: 1px solid #565869; }
+        .input-area { background: #202123; padding: 20px; display: flex; gap: 10px; justify-content: center; }
+        input { width: 70%; padding: 12px; border-radius: 6px; border: 1px solid #4d4d4f; background: #40414f; color: white; outline: none; }
+        button { padding: 12px 20px; background: #10a37f; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #1a7f64; }
       </style>
     </head>
     <body>
-      <div class="box">
-        <h2>Envoyer un message à l'hôte</h2>
-        <input type="text" id="msg" placeholder="Écris ton message...">
-        <br>
+      <header>⚡ Nia AI</header>
+      <div id="chat" class="chat-container"></div>
+      <div class="input-area">
+        <input type="text" id="prompt" placeholder="Envoyer un message à Nia..." onkeydown="if(event.key==='Enter') envoyer()">
         <button onclick="envoyer()">Envoyer</button>
-        <p id="statut" style="color: green;"></p>
       </div>
 
       <script>
+        const chat = document.getElementById('chat');
+
+        // Charge l'historique enregistré dans le navigateur
+        function chargerHistorique() {
+          const sauvegarde = localStorage.getItem('nia_chat_history');
+          if (sauvegarde) {
+            chat.innerHTML = sauvegarde;
+            chat.scrollTop = chat.scrollHeight;
+          } else {
+            ajouterMessage('nia', 'Bonjour ! Je suis Nia. Comment puis-je vous aider aujourd\'hui ?');
+          }
+        }
+
+        function sauvegarderHistorique() {
+          localStorage.setItem('nia_chat_history', chat.innerHTML);
+        }
+
+        function ajouterMessage(auteur, texte) {
+          const div = document.createElement('div');
+          div.className = 'message ' + auteur;
+          div.innerText = (auteur === 'nia' ? 'Nia: ' : '') + texte;
+          chat.appendChild(div);
+          chat.scrollTop = chat.scrollHeight;
+          sauvegarderHistorique();
+        }
+
         async function envoyer() {
-          const input = document.getElementById('msg');
+          const input = document.getElementById('prompt');
           const text = input.value.trim();
-          if(!text) return;
+          if (!text) return;
+
+          ajouterMessage('user', text);
+          input.value = '';
 
           await fetch('/envoyer-web', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text })
           });
-
-          input.value = '';
-          document.getElementById('statut').innerText = 'Message envoyé !';
-          setTimeout(() => document.getElementById('statut').innerText = '', 3000);
         }
+
+        // Vérification automatique des réponses envoyées par toi
+        setInterval(async () => {
+          try {
+            const res = await fetch('/recuperer-reponse');
+            const data = await res.json();
+            if (data.reponse) {
+              ajouterMessage('nia', data.reponse);
+            }
+          } catch(e) {}
+        }, 1500);
+
+        chargerHistorique();
       </script>
     </body>
     </html>
   `);
 });
 
-// 2. Le web envoie un message au serveur
+// Envoi du message par le visiteur
 app.post('/envoyer-web', (req, res) => {
-  const { message } = req.body;
-  if (message) {
-    messages.push(message);
-    console.log("Nouveau message web :", message);
-  }
+  if (req.body.message) questionsWeb.push(req.body.message);
   res.json({ success: true });
 });
 
-// 3. Python vient récupérer les nouveaux messages
-app.get('/recuperer-messages', (req, res) => {
-  const aEnvoyer = [...messages];
-  messages = []; // Vide la liste après récupération
-  res.json({ messages: aEnvoyer });
+// Récupération des messages par ton script Python
+app.get('/recuperer-questions', (req, res) => {
+  const q = [...questionsWeb];
+  questionsWeb = [];
+  res.json({ questions: q });
+});
+
+// Envoi de ta réponse depuis Python
+app.post('/repondre-humain', (req, res) => {
+  if (req.body.reponse) reponsesHumain.push(req.body.reponse);
+  res.json({ success: true });
+});
+
+// Transmission de ta réponse vers le navigateur du visiteur
+app.get('/recuperer-reponse', (req, res) => {
+  const rep = reponsesHumain.shift() || null;
+  res.json({ reponse: rep });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur actif sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`Serveur Nia prêt sur le port ${PORT}`));
