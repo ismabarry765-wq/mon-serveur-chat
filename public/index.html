@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assistant IA</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-main: #f8fafc;
+      --bg-card: #ffffff;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+    .chat-container { width: 100%; max-width: 850px; height: 100vh; display: flex; flex-direction: column; background: var(--bg-card); box-shadow: var(--shadow-md); }
+
+    .header { padding: 18px 24px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); }
+    .header-avatar { width: 32px; height: 32px; background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: bold; }
+    .header-title { font-weight: 600; font-size: 1.05rem; color: var(--text-main); }
+
+    .messages { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth; }
+    
+    .msg { max-width: 75%; padding: 12px 18px; border-radius: 18px; font-size: 0.95rem; line-height: 1.5; box-shadow: var(--shadow-sm); word-break: break-word; }
+    .msg.user { align-self: flex-end; background: var(--primary); color: white; border-bottom-right-radius: 4px; }
+    .msg.assistant { align-self: flex-start; background: #f1f5f9; color: var(--text-main); border-bottom-left-radius: 4px; border: 1px solid var(--border-color); }
+
+    .typing-indicator { font-size: 0.85rem; color: var(--text-muted); font-style: italic; padding: 0 24px 8px 24px; min-height: 24px; }
+
+    .input-wrapper { padding: 16px 20px 20px 20px; background: var(--bg-card); border-top: 1px solid var(--border-color); }
+    .input-box { display: flex; gap: 10px; background: #f8fafc; border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 28px; transition: all 0.2s ease; }
+    .input-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); background: white; }
+    
+    input { flex: 1; border: none; background: transparent; outline: none; padding: 8px 12px; font-size: 0.95rem; color: var(--text-main); }
+    button { background: var(--primary); color: white; border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+    button:hover { background: var(--primary-hover); }
+  </style>
+</head>
+<body>
+
+  <div class="chat-container">
+    <div class="header">
+      <div class="header-avatar">✨</div>
+      <div class="header-title">Assistant IA</div>
+    </div>
+
+    <div class="messages" id="msgs"></div>
+
+    <div class="typing-indicator" id="typing-status"></div>
+
+    <div class="input-wrapper">
+      <div class="input-box">
+        <input type="text" id="inp" placeholder="Posez une question..." oninput="handleTyping()" onkeydown="if(event.key==='Enter') send()">
+        <button onclick="send()">Envoyer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let history = [];
+    let typingTimer;
+
+    socket.on('init-data', c => { history = c[0].messages; render(); });
+    socket.on('new-message', data => { 
+      history.push(data.message); 
+      render(); 
+      document.getElementById('typing-status').innerText = '';
+    });
+
+    socket.on('user-typing', (data) => {
+      if (data.sender === 'assistant') {
+        document.getElementById('typing-status').innerText = "✨ L'IA est en train d'écrire...";
+      }
+    });
+
+    socket.on('user-stop-typing', (data) => {
+      if (data.sender === 'assistant') {
+        document.getElementById('typing-status').innerText = '';
+      }
+    });
+
+    function handleTyping() {
+      socket.emit('typing', { sender: 'user' });
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => {
+        socket.emit('stop-typing', { sender: 'user' });
+      }, 1000);
+    }
+
+    function render() {
+      const box = document.getElementById('msgs');
+      box.innerHTML = '';
+      history.forEach(m => {
+        const div = document.createElement('div');
+        div.className = `msg ${m.sender}`;
+        div.innerText = m.text || '';
+        box.appendChild(div);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function send() {
+      const inp = document.getElementById('inp');
+      if (!inp.value.trim()) return;
+      socket.emit('stop-typing', { sender: 'user' });
+      socket.emit('send-message', { convId: 'conv-1', text: inp.value.trim(), sender: 'user' });
+      inp.value = '';
+    }
+  </script>
+</body>
+</html>
