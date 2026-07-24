@@ -16,46 +16,56 @@ app.get('/', (req, res) => {
     <html lang="fr">
     <head>
       <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
       <title>Nexus AI</title>
       <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
-        body { background-color: #f7f7f8; color: #353740; height: 100vh; display: flex; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #f7f7f8; color: #353740; height: 100vh; height: 100dvh; display: flex; overflow: hidden; }
         
-        #auth-screen { position: fixed; inset: 0; background: #ffffff; display: flex; justify-content: center; align-items: center; z-index: 100; }
-        .auth-box { background: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #e5e5e5; width: 100%; max-width: 360px; text-align: center; }
-        .auth-box h2 { margin-bottom: 20px; font-size: 1.5rem; }
-        .auth-box input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #d9d9e3; border-radius: 8px; outline: none; }
-        .auth-box button { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-bottom: 10px; }
-        .toggle-link { font-size: 0.85rem; color: #6366f1; cursor: pointer; text-decoration: underline; }
+        #auth-screen { position: fixed; inset: 0; background: #ffffff; display: flex; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
+        .auth-box { background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #e5e5e5; width: 100%; max-width: 360px; text-align: center; }
+        .auth-box h2 { margin-bottom: 20px; font-size: 1.4rem; }
+        .auth-box input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #d9d9e3; border-radius: 8px; outline: none; font-size: 16px; }
+        .auth-box button { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; }
+        .toggle-link { font-size: 0.85rem; color: #6366f1; cursor: pointer; text-decoration: underline; margin-top: 15px; display: block; }
 
-        #app-screen { display: none; width: 100%; height: 100%; flex-direction: row; }
-        .sidebar { width: 260px; background: #f0f0f0; border-right: 1px solid #e5e5e5; display: flex; flex-direction: column; padding: 12px; }
-        .btn-new-chat { background: #ffffff; border: 1px solid #d9d9e3; padding: 10px; border-radius: 8px; cursor: pointer; font-weight: 500; margin-bottom: 15px; }
-        .chat-list { flex: 1; overflow-y: auto; }
-        .chat-item { padding: 10px; border-radius: 6px; cursor: pointer; font-size: 0.88rem; margin-bottom: 4px; }
-        .chat-item:hover, .chat-item.active { background: #e3e3e3; }
-        .user-footer { border-top: 1px solid #d9d9e3; padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+        #app-screen { display: none; width: 100%; height: 100%; flex-direction: row; position: relative; }
         
-        .main-chat { flex: 1; display: flex; flex-direction: column; background: #ffffff; }
-        .chat-header { height: 50px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; padding: 0 20px; font-weight: 600; justify-content: space-between; }
-        .messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .msg-row { display: flex; gap: 12px; max-width: 800px; margin: 0 auto; width: 100%; }
-        .avatar { width: 32px; height: 32px; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; flex-shrink: 0; }
+        .sidebar { width: 260px; background: #f9f9fb; border-right: 1px solid #e5e5e5; display: flex; flex-direction: column; padding: 12px; transition: transform 0.3s ease; z-index: 50; }
+        .btn-new-chat { background: #ffffff; border: 1px solid #d9d9e3; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 500; margin-bottom: 15px; }
+        .chat-list { flex: 1; overflow-y: auto; }
+        .chat-item { padding: 12px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; margin-bottom: 4px; }
+        .chat-item:hover, .chat-item.active { background: #eaeaec; }
+        .user-footer { border-top: 1px solid #d9d9e3; padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+
+        .main-chat { flex: 1; display: flex; flex-direction: column; background: #ffffff; width: 100%; }
+        .chat-header { height: 55px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; padding: 0 15px; font-weight: 600; justify-content: space-between; }
+        .btn-menu { display: none; background: none; border: none; font-size: 1.4rem; cursor: pointer; margin-right: 10px; }
+        
+        .messages-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 15px; }
+        .msg-row { display: flex; gap: 10px; max-width: 800px; margin: 0 auto; width: 100%; }
+        .avatar { width: 32px; height: 32px; border-radius: 6px; display: flex; justify-content: center; align-items: center; font-weight: bold; color: white; flex-shrink: 0; font-size: 0.85rem; }
         .avatar.user { background: #5436da; }
         .avatar.nexus { background: #6366f1; }
-        .msg-content { font-size: 0.95rem; line-height: 1.5; padding-top: 5px; }
+        .msg-content { font-size: 0.95rem; line-height: 1.4; padding-top: 4px; word-break: break-word; }
         
-        .input-container { padding: 20px; background: #ffffff; border-top: 1px solid #f0f0f0; display: flex; justify-content: center; }
-        .input-box { width: 100%; max-width: 800px; position: relative; }
-        .input-box input { width: 100%; padding: 14px 45px 14px 16px; border: 1px solid #d9d9e3; border-radius: 12px; outline: none; }
-        .input-box button { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #6366f1; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; }
+        .input-container { padding: 12px 15px; background: #ffffff; border-top: 1px solid #f0f0f0; display: flex; justify-content: center; }
+        .input-box { width: 100%; max-width: 800px; position: relative; display: flex; }
+        .input-box input { width: 100%; padding: 12px 45px 12px 14px; border: 1px solid #d9d9e3; border-radius: 10px; outline: none; font-size: 16px; }
+        .input-box button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #6366f1; color: white; border: none; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 1rem; }
 
-        /* Modal Paramètres */
-        #settings-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 200; }
-        .modal-box { background: white; padding: 25px; border-radius: 12px; width: 320px; text-align: center; }
-        .modal-box h3 { margin-bottom: 15px; }
-        .modal-box button { width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+        #settings-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 200; padding: 20px; }
+        .modal-box { background: white; padding: 20px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; }
+        .modal-box button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; }
+
+        /* Adaptations spécifiques aux mobiles */
+        @media (max-width: 768px) {
+          .btn-menu { display: block; }
+          .sidebar { position: absolute; left: 0; top: 0; bottom: 0; transform: translateX(-100%); width: 280px; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+          .sidebar.open { transform: translateX(0); }
+          .overlay-sidebar { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 40; }
+          .overlay-sidebar.open { display: block; }
+        }
       </style>
     </head>
     <body>
@@ -71,22 +81,27 @@ app.get('/', (req, res) => {
       </div>
 
       <div id="app-screen">
-        <div class="sidebar">
-          <button class="btn-new-chat" onclick="nouveauChat()">+ Nouveau message</button>
+        <div class="overlay-sidebar" id="overlay" onclick="toggleMenu()"></div>
+        <div class="sidebar" id="sidebar">
+          <button class="btn-new-chat" onclick="nouveauChat(); toggleMenu();">+ Nouveau message</button>
           <div class="chat-list" id="chat-list"></div>
           <div class="user-footer">
             <span id="logged-user-name" style="font-weight: 600;"></span>
             <button style="background:none; border:none; color:#6366f1; cursor:pointer; font-weight:bold;" onclick="ouvrirParametres()">⚙️ Paramètres</button>
           </div>
         </div>
+
         <div class="main-chat">
           <div class="chat-header">
-            <span>🌐 Nexus AI</span>
+            <div style="display:flex; align-items:center;">
+              <button class="btn-menu" onclick="toggleMenu()">☰</button>
+              <span>🌐 Nexus AI</span>
+            </div>
           </div>
           <div class="messages-container" id="messages"></div>
           <div class="input-container">
             <div class="input-box">
-              <input type="text" id="prompt-input" placeholder="Envoyer un message à Nexus AI..." onkeydown="if(event.key==='Enter') envoyerMessage()">
+              <input type="text" id="prompt-input" placeholder="Envoyer un message..." onkeydown="if(event.key==='Enter') envoyerMessage()">
               <button onclick="envoyerMessage()">➔</button>
             </div>
           </div>
@@ -108,7 +123,6 @@ app.get('/', (req, res) => {
         let currentChatId = null;
         const notifSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
-        // Auto-login au chargement
         window.onload = () => {
           const savedUser = localStorage.getItem('nexus_user');
           if (savedUser) {
@@ -119,6 +133,11 @@ app.get('/', (req, res) => {
             chargerChats();
           }
         };
+
+        function toggleMenu() {
+          document.getElementById('sidebar').classList.toggle('open');
+          document.getElementById('overlay').classList.toggle('open');
+        }
 
         function toggleAuthMode() {
           isLogin = !isLogin;
@@ -165,7 +184,7 @@ app.get('/', (req, res) => {
         }
 
         async function supprimerCompte() {
-          if (!confirm("Voulez-vous vraiment supprimer définitivement votre compte ?")) return;
+          if (!confirm("Voulez-vous vraiment supprimer votre compte ?")) return;
           await fetch('/delete-account', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -187,7 +206,7 @@ app.get('/', (req, res) => {
               const item = document.createElement('div');
               item.className = 'chat-item ' + (chat.id === currentChatId ? 'active' : '');
               item.innerText = chat.title || 'Discussion';
-              item.onclick = () => ouvrirChat(chat.id);
+              item.onclick = () => { ouvrirChat(chat.id); if(window.innerWidth <= 768) toggleMenu(); };
               list.appendChild(item);
             });
             if(!currentChatId && data.chats.length > 0) ouvrirChat(data.chats[0].id);
