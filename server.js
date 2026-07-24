@@ -1,41 +1,44 @@
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+const cors = require('cors');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 1e7 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Middleware pour autoriser les requêtes cross-origin (CORS) et parser le JSON
+app.use(cors());
+app.use(express.json());
 
-let conversations = [
-  { id: 'conv-1', name: 'Utilisateur #1', messages: [] }
-];
-
-io.on('connection', (socket) => {
-  socket.emit('init-data', conversations);
-
-  // Transfert du statut "en train d'écrire"
-  socket.on('typing', (data) => {
-    socket.broadcast.emit('user-typing', data);
-  });
-
-  socket.on('stop-typing', (data) => {
-    socket.broadcast.emit('user-stop-typing', data);
-  });
-
-  socket.on('send-message', (data) => {
-    const { convId, text, image, sender } = data;
-    const conv = conversations.find(c => c.id === convId);
-
-    if (conv) {
-      const msg = { sender, text, image, timestamp: new Date() };
-      conv.messages.push(msg);
-      io.emit('new-message', { convId, message: msg });
-    }
-  });
+// 1. Route de test (page d'accueil dans le navigateur)
+app.get('/', (req, res) => {
+  res.send('🚀 Serveur Chat IA en ligne et opérationnel sur Render !');
 });
 
-const PORT = 3000;
-server.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
+// 2. Route POST /chat (appelée par ai_gui.py)
+app.post('/chat', async (req, res) => {
+  try {
+    const userMessage = req.body.message;
+
+    if (!userMessage) {
+      return res.status(400).json({ error: 'Le message ne peut pas être vide.' });
+    }
+
+    console.log(`[Message reçu] : ${userMessage}`);
+
+    // --- LOGIQUE DE RÉPONSE ---
+    // (Tu peux remplacer cette logique par un vrai appel à une API comme OpenAI, Gemini, etc.)
+    const botReply = `J'ai bien reçu ton message : "${userMessage}"`;
+
+    // Renvoie la réponse au format JSON avec la clé "reply"
+    return res.json({ reply: botReply });
+
+  } catch (error) {
+    console.error('Erreur serveur :', error);
+    return res.status(500).json({ error: 'Une erreur interne est survenue sur le serveur.' });
+  }
+});
+
+// Définition du port (Render attribue un port dynamiquement via process.env.PORT)
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Le serveur tourne sur le port ${PORT}`);
+});
