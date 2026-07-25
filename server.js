@@ -668,7 +668,7 @@ app.get('/groq', (req, res) => {
 });
 
 // ==========================================
-// 🔐 API AUTHENTIFICATION (suite)
+// 🔐 API AUTHENTIFICATION
 // ==========================================
 app.post('/api/register', (req, res) => {
     const { username, password } = req.body;
@@ -718,7 +718,7 @@ app.post('/message', async (req, res) => {
     // Ajouter le message de l'utilisateur
     conversations[chatId].messages.push({ sender: username, text });
 
-    // Message d'attente avec animation
+    // Message d'attente simplifié - Nexus IA réfléchit...
     const waitingMsg = "Nexus IA réfléchit...";
     conversations[chatId].messages.push({ 
         sender: "Groq IA", 
