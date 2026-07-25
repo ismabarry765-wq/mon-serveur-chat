@@ -1,20 +1,29 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { Groq } = require('groq-sdk');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.static(__dirname));
 
-// Clé Groq depuis variable d'environnement ou dynamique
 let GROQ_KEY = process.env.GROQ_API_KEY || "";
 let groq = GROQ_KEY ? new Groq({ apiKey: GROQ_KEY }) : null;
 
-// Stockage des discussions
-let conversations = {};
+let users = {};          // { pseudo: password }
+let conversations = {};  // { chatId: { username, messages: [] } }
+let adminActive = false;
+let lastAdminPing = 0;
+
+setInterval(() => {
+    if (Date.now() - lastAdminPing > 6000) {
+        adminActive = false;
+    }
+}, 3000);
 
 // ==========================================
-// 🌐 INTERFACE WEB (Sert directement l'app)
+// 🌐 APP WEB UTILISATEUR (Directement dans le JS)
 // ==========================================
 app.get('/', (req, res) => {
     res.send(`
@@ -33,12 +42,11 @@ app.get('/', (req, res) => {
             .message { padding: 12px 16px; border-radius: 12px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; }
             .user { align-self: flex-end; background: #f3f3f3; color: #0d0d0d; border-bottom-right-radius: 2px; }
             .ai { align-self: flex-start; background: #ffffff; color: #0d0d0d; border: 1px solid #e5e7eb; border-bottom-left-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-            .admin { align-self: flex-start; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; border-bottom-left-radius: 2px; }
+            .admin { align-self: flex-start; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
             #input-container { padding: 15px 20px; background: #ffffff; border-top: 1px solid #e5e7eb; max-width: 768px; width: 100%; margin: 0 auto; }
             .input-box { display: flex; gap: 10px; border: 1px solid #d1d5db; border-radius: 24px; padding: 6px 12px 6px 18px; background: #ffffff; }
             input { flex: 1; border: none; outline: none; font-size: 1rem; background: transparent; }
             button { background: #0d0d0d; color: white; border: none; padding: 8px 16px; border-radius: 18px; font-weight: 600; cursor: pointer; }
-            button:hover { background: #262626; }
         </style>
     </head>
     <body>
@@ -49,7 +57,7 @@ app.get('/', (req, res) => {
         <div id="chat-container"></div>
         <div id="input-container">
             <div class="input-box">
-                <input type="text" id="user-input" placeholder="Envoyer un message à l'IA..." onkeydown="if(event.key==='Enter') sendMsg()">
+                <input type="text" id="user-input" placeholder="Envoyer un message..." onkeydown="if(event.key==='Enter') sendMsg()">
                 <button onclick="sendMsg()">Envoyer</button>
             </div>
         </div>
@@ -76,7 +84,7 @@ app.get('/', (req, res) => {
                         appendMsg(data.isHuman ? 'admin' : 'ai', data.reply);
                     }
                 } catch(e) {
-                    appendMsg('ai', "Erreur de connexion au serveur.");
+                    appendMsg('ai', "Erreur de connexion.");
                 }
             }
 
@@ -94,9 +102,33 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ==========================================
-// 🛠️ ROUTES API POUR L'ADMIN PYTHON
-// ==========================================
+// Route pour la page spéciale de Groq
+app.get('/groq', (req, res) => {
+    res.sendFile(path.join(__dirname, 'groq.html'));
+});
+
+// --- API AUTHENTIFICATION ---
+app.post('/api/register', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Champs incomplets" });
+    if (users[username]) return res.status(400).json({ error: "Ce pseudo existe déjà !" });
+    users[username] = password;
+    res.json({ success: true, message: "Compte créé !" });
+});
+
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (!users[username] || users[username] !== password) {
+        return res.status(401).json({ error: "Identifiants incorrects" });
+    }
+    res.json({ success: true, message: "Connexion réussie !" });
+});
+
+app.post('/api/admin/ping', (req, res) => {
+    adminActive = true;
+    lastAdminPing = Date.now();
+    res.json({ success: true, adminActive });
+});
 
 app.post('/set-api-key', (req, res) => {
     const { apiKey } = req.body;
@@ -107,13 +139,46 @@ app.post('/set-api-key', (req, res) => {
     res.json({ success: true });
 });
 
+// --- MESSAGERIE ---
+app.post('/message', async (req, res) => {
+    const { chatId, username, text } = req.body;
+    if (!chatId) return res.status(400).send("chatId requis");
+
+    if (!conversations[chatId]) {
+        conversations[chatId] = { username: username || "Visiteur", messages: [] };
+    }
+
+    conversations[chatId].messages.push({ sender: username || "Visiteur", text: text || "" });
+
+    let reply = null;
+    let thought = null;
+
+    if (!adminActive && groq) {
+        try {
+            const completion = await groq.chat.completions.create({
+                messages: [{ role: "user", content: text || "Bonjour" }],
+                model: "llama-3.3-70b-versatile",
+            });
+
+            reply = completion.choices[0]?.message?.content || "Pas de réponse";
+            thought = "Analyse du prompt utilisateur, génération de la réponse la plus pertinente via Llama 3.3...";
+
+            conversations[chatId].messages.push({ sender: "Groq IA", text: reply, thought: thought });
+        } catch (e) {
+            console.error("Erreur Groq:", e.message);
+        }
+    }
+
+    res.json({ success: true, reply, adminPresent: adminActive });
+});
+
 app.get('/recuperer-questions', (req, res) => {
     const questions = Object.keys(conversations).map(chatId => ({
         chatId: chatId,
         username: conversations[chatId].username,
-        audio: conversations[chatId].messages.some(m => m.audio)
+        messages: conversations[chatId].messages
     }));
-    res.json({ questions });
+    res.json({ questions, adminActive });
 });
 
 app.get('/chats/:username', (req, res) => {
@@ -122,37 +187,9 @@ app.get('/chats/:username', (req, res) => {
     res.json({ chats: userChats });
 });
 
-app.post('/message', async (req, res) => {
-    const { chatId, username, text } = req.body;
-    if (!chatId) return res.status(400).send("chatId requis");
-
-    if (!conversations[chatId]) {
-        conversations[chatId] = { username: username || "Utilisateur", messages: [] };
-    }
-
-    conversations[chatId].messages.push({ sender: username || "Utilisateur", text: text || "" });
-
-    let reply = "Message transmis.";
-
-    if (groq) {
-        try {
-            const completion = await groq.chat.completions.create({
-                messages: [{ role: "user", content: text || "Bonjour" }],
-                model: "llama-3.3-70b-versatile",
-            });
-            reply = completion.choices[0]?.message?.content || reply;
-            conversations[chatId].messages.push({ sender: "Groq IA", text: reply });
-        } catch (e) {
-            console.error("Erreur Groq:", e.message);
-        }
-    }
-
-    res.json({ success: true, reply });
-});
-
 app.post('/repondre-humain', async (req, res) => {
     const { chatId, reponse, admin, forceIa } = req.body;
-    if (!conversations[chatId]) return res.status(404).send("Chat non trouvé");
+    if (!conversations[chatId]) return res.status(404).send("Chat introuvable");
 
     if (forceIa && groq) {
         const lastMsg = conversations[chatId].messages.slice().reverse().find(m => m.sender !== "Groq IA");
