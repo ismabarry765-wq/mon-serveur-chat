@@ -74,6 +74,7 @@ app.get('/', (req, res) => {
             .message.user { align-self: flex-end; background: #f3f4f6; color: #0d0d0d; border-bottom-right-radius: 4px; }
             .message.ai { align-self: flex-start; background: #f7f7f8; color: #0d0d0d; border-bottom-left-radius: 4px; }
             .message.typing { opacity: 0.6; font-style: italic; }
+            .message.admin { align-self: flex-start; background: #e0e7ff; color: #1e40af; border-bottom-left-radius: 4px; border-left: 3px solid #6366f1; }
 
             #input-container { padding: 16px 24px; background: #ffffff; border-top: 1px solid #e5e7eb; max-width: 800px; width: 100%; margin: 0 auto; }
             .input-box { display: flex; gap: 12px; border: 2px solid #e5e7eb; border-radius: 28px; padding: 6px 6px 6px 24px; transition: border-color 0.2s; }
@@ -257,7 +258,9 @@ app.get('/', (req, res) => {
                         const container = document.getElementById('chat-container');
                         container.innerHTML = '';
                         data.messages.forEach(msg => {
-                            const type = msg.sender === currentUser ? 'user' : 'ai';
+                            let type = 'user';
+                            if (msg.sender === 'Groq IA') type = 'ai';
+                            else if (msg.sender === 'Admin') type = 'admin';
                             appendMsg(type, msg.text, false);
                         });
                         if (data.messages.length === 0) {
@@ -306,7 +309,12 @@ app.get('/', (req, res) => {
                     isTyping = false;
                     
                     if (data.reply) {
-                        appendMsg('ai', data.reply);
+                        // Si c'est une réponse admin, on l'affiche différemment
+                        if (data.isAdmin) {
+                            appendMsg('admin', data.reply);
+                        } else {
+                            appendMsg('ai', data.reply);
+                        }
                     }
                 } catch(e) {
                     container.removeChild(typingDiv);
@@ -385,6 +393,7 @@ app.get('/groq', (req, res) => {
             .card-question { border-left: 4px solid #6366f1; }
             .card-thought { border-left: 4px solid #f59e0b; background: #fffbeb; font-style: italic; color: #92400e; }
             .card-response { border-left: 4px solid #10b981; background: #f0fdf4; }
+            .card-admin { border-left: 4px solid #8b5cf6; background: #f5f3ff; }
             .card .timestamp { font-size: 0.75rem; color: #94a3b8; margin-top: 8px; }
         </style>
     </head>
@@ -402,19 +411,20 @@ app.get('/groq', (req, res) => {
         <div id="main-content">
             <header>
                 <span>📊 Dashboard Admin</span>
-                <small>Monitoring des conversations Nexus IA</small>
+                <small>Répondre aux utilisateurs</small>
             </header>
             <div id="monitor-container">
                 <div style="text-align: center; color: #94a3b8; margin-top: 60px; font-size: 1rem;">
                     <div style="font-size: 3rem; margin-bottom: 16px;">📡</div>
                     <div style="font-weight: 500;">Sélectionnez une session à gauche</div>
-                    <div style="font-size: 0.9rem; margin-top: 8px;">Visualisez les réflexions internes et les réponses de Nexus IA</div>
+                    <div style="font-size: 0.9rem; margin-top: 8px;">Répondez manuellement aux utilisateurs</div>
                 </div>
             </div>
         </div>
 
         <script>
             let allSessions = [];
+            let selectedChatId = null;
 
             async function fetchActivity() {
                 try {
@@ -449,6 +459,7 @@ app.get('/groq', (req, res) => {
             }
 
             function showSessionDetails(s) {
+                selectedChatId = s.chatId;
                 const container = document.getElementById('monitor-container');
                 container.innerHTML = \`
                     <div style="margin-bottom: 16px;">
@@ -457,6 +468,15 @@ app.get('/groq', (req, res) => {
                             <span style="font-size: 0.8rem; color: #94a3b8; font-weight: 400;">Session: \${s.chatId}</span>
                         </h3>
                     </div>
+                    <div style="margin-bottom: 16px;">
+                        <textarea id="admin-response" rows="3" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:8px; font-size:0.95rem; resize:vertical;" placeholder="Écris ta réponse ici..."></textarea>
+                        <div style="margin-top:8px; display:flex; gap:8px;">
+                            <button onclick="sendAdminReply()" style="background: #6366f1; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">📤 Envoyer la réponse</button>
+                            <button onclick="clearAdminReply()" style="background: #ef4444; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">🗑️ Effacer</button>
+                        </div>
+                    </div>
+                    <hr style="border:1px solid #e2e8f0; margin:16px 0;">
+                    <h4 style="color:#64748b; margin-bottom:12px;">📜 Historique des messages</h4>
                 \`;
 
                 if (!s.messages || s.messages.length === 0) {
@@ -465,36 +485,62 @@ app.get('/groq', (req, res) => {
                 }
 
                 s.messages.forEach(m => {
-                    if (m.sender !== "Groq IA") {
-                        const box = document.createElement('div');
-                        box.className = 'card card-question';
-                        box.innerHTML = \`
-                            <strong>❓ Question de \${m.sender} :</strong>
-                            <br>\${m.text}
-                            <div class="timestamp">\${new Date().toLocaleTimeString()}</div>
-                        \`;
-                        container.appendChild(box);
-                    } else {
-                        if (m.thought) {
-                            const thoughtBox = document.createElement('div');
-                            thoughtBox.className = 'card card-thought';
-                            thoughtBox.innerHTML = \`
-                                <strong>🧠 Réflexion interne (Thinking) :</strong>
-                                <br>\${m.thought}
-                                <div class="timestamp">\${new Date().toLocaleTimeString()}</div>
-                            \`;
-                            container.appendChild(thoughtBox);
-                        }
-                        const resBox = document.createElement('div');
-                        resBox.className = 'card card-response';
-                        resBox.innerHTML = \`
-                            <strong>🤖 Réponse de Nexus IA :</strong>
-                            <br>\${m.text}
-                            <div class="timestamp">\${new Date().toLocaleTimeString()}</div>
-                        \`;
-                        container.appendChild(resBox);
+                    let cardClass = 'card-question';
+                    let label = '❓ Question';
+                    if (m.sender === 'Groq IA') {
+                        cardClass = 'card-response';
+                        label = '🤖 Réponse IA';
+                    } else if (m.sender === 'Admin') {
+                        cardClass = 'card-admin';
+                        label = '👑 Admin';
                     }
+                    const box = document.createElement('div');
+                    box.className = 'card ' + cardClass;
+                    box.innerHTML = \`
+                        <strong>\${label} de \${m.sender} :</strong>
+                        <br>\${m.text}
+                        <div class="timestamp">\${new Date().toLocaleTimeString()}</div>
+                    \`;
+                    container.appendChild(box);
                 });
+            }
+
+            async function sendAdminReply() {
+                const textarea = document.getElementById('admin-response');
+                const text = textarea.value.trim();
+                if (!text || !selectedChatId) {
+                    alert('Écris une réponse et sélectionne une conversation.');
+                    return;
+                }
+
+                try {
+                    const res = await fetch('/repondre-humain', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            chatId: selectedChatId, 
+                            reponse: text, 
+                            admin: 'Admin' 
+                        })
+                    });
+                    if (res.ok) {
+                        alert('✅ Réponse envoyée avec succès !');
+                        textarea.value = '';
+                        // Rafraîchir
+                        fetchActivity();
+                        // Recharger les détails
+                        const session = allSessions.find(s => s.chatId === selectedChatId);
+                        if (session) showSessionDetails(session);
+                    } else {
+                        alert('❌ Erreur lors de l\'envoi');
+                    }
+                } catch(e) {
+                    alert('❌ Erreur: ' + e.message);
+                }
+            }
+
+            function clearAdminReply() {
+                document.getElementById('admin-response').value = '';
             }
 
             setInterval(fetchActivity, 3000);
@@ -553,59 +599,84 @@ app.post('/message', async (req, res) => {
         conversations[chatId] = { username, messages: [] };
     }
 
+    // Ajouter le message de l'utilisateur
     conversations[chatId].messages.push({ sender: username, text });
 
-    try {
-        const history = conversations[chatId].messages.slice(-10).map(m => 
-            `${m.sender === "Groq IA" ? "IA" : username}: ${m.text}`
-        ).join('\n');
-
-        let groqResponse = "⚠️ La clé API Groq n'est pas configurée. Contacte Ismaël pour configurer Nexus IA !";
-        let thought = null;
-
-        if (groq) {
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    { 
-                        role: "system", 
-                        content: `Tu es Nexus IA, une intelligence artificielle créée avec passion par Ismaël, un développeur talentueux et visionnaire. 
-                        Tu es amicale, réfléchie et bienveillante. Tu aides les utilisateurs avec sagesse et empathie.
-                        Ismaël a conçu ton architecture avec soin, en y mettant tout son cœur et son expertise.
-                        Réponds toujours de manière utile, précise et humaine.`
-                    },
-                    { 
-                        role: "user", 
-                        content: `Contexte de la conversation :\n${history}\n\nQuestion de ${username} : ${text}`
-                    }
-                ],
-                model: "mixtral-8x7b-32768",
-                temperature: 0.8,
-                max_tokens: 1024,
-            });
-
-            groqResponse = completion.choices[0]?.message?.content || "Je n'ai pas pu générer de réponse.";
-            thought = `Analyse de la question : "${text}" - Génération d'une réponse pertinente et empathique.`;
-        }
-
+    // Vérifier si l'admin a répondu automatiquement
+    const adminReply = checkAdminAutoReply(chatId);
+    if (adminReply) {
         conversations[chatId].messages.push({ 
-            sender: "Groq IA", 
-            text: groqResponse,
-            thought: thought 
+            sender: "Admin", 
+            text: adminReply,
+            isAdmin: true
         });
-
-        res.json({ reply: groqResponse });
-
-    } catch (error) {
-        console.error("Erreur Groq:", error);
-        const errorMsg = "❌ Une erreur est survenue. Réessaie plus tard.";
-        conversations[chatId].messages.push({ 
-            sender: "Groq IA", 
-            text: errorMsg 
-        });
-        res.json({ reply: errorMsg });
+        return res.json({ reply: adminReply, isAdmin: true });
     }
+
+    // Si l'admin n'a pas répondu, message d'attente
+    const waitingMsg = "⏳ En attente d'une réponse de l'administrateur... Un admin vous répondra bientôt !";
+    conversations[chatId].messages.push({ 
+        sender: "Groq IA", 
+        text: waitingMsg 
+    });
+    
+    res.json({ reply: waitingMsg, isAdmin: false });
 });
 
+// Simulation de réponses admin automatiques (optionnel)
+function checkAdminAutoReply(chatId) {
+    // Tu peux personnaliser cette fonction
+    // Retourne null si pas de réponse automatique
+    return null;
+}
+
+// ==========================================
+// 👑 API ADMIN - Répondre manuellement
+// ==========================================
+app.post('/repondre-humain', (req, res) => {
+    const { chatId, reponse, admin } = req.body;
+    if (!chatId || !reponse) {
+        return res.status(400).json({ error: "Données manquantes" });
+    }
+
+    if (!conversations[chatId]) {
+        return res.status(404).json({ error: "Conversation introuvable" });
+    }
+
+    // Ajouter la réponse de l'admin
+    conversations[chatId].messages.push({ 
+        sender: admin || "Admin", 
+        text: reponse,
+        isAdmin: true
+    });
+
+    res.json({ success: true, message: "Réponse envoyée" });
+});
+
+// Récupérer toutes les conversations
+app.get('/recuperer-questions', (req, res) => {
+    const questions = Object.keys(conversations).map(chatId => ({
+        chatId,
+        username: conversations[chatId].username,
+        messages: conversations[chatId].messages,
+        messageCount: conversations[chatId].messages.length
+    }));
+    res.json({ questions });
+});
+
+// Récupérer les messages d'un utilisateur
+app.get('/chats/:username', (req, res) => {
+    const { username } = req.params;
+    const userChats = Object.keys(conversations)
+        .filter(key => conversations[key].username === username)
+        .map(key => ({
+            chatId: key,
+            messages: conversations[key].messages
+        }));
+    res.json({ chats: userChats });
+});
+
+// Récupérer l'historique d'une conversation
 app.get('/get-history', (req, res) => {
     const { chatId, username } = req.query;
     if (!chatId || !username) {
@@ -621,30 +692,18 @@ app.get('/get-history', (req, res) => {
 });
 
 // ==========================================
-// 📊 API ADMIN
-// ==========================================
-app.get('/recuperer-questions', (req, res) => {
-    const questions = Object.keys(conversations).map(chatId => ({
-        chatId,
-        username: conversations[chatId].username,
-        messages: conversations[chatId].messages,
-        messageCount: conversations[chatId].messages.length
-    }));
-    res.json({ questions });
-});
-
-// ==========================================
 // 🚀 DÉMARRAGE
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`
     ╔═══════════════════════════════════════════════════════╗
-    ║     ✨ NEXUS IA - SERVEUR DÉMARRÉ SUR RENDER ✨     ║
+    ║     ✨ NEXUS IA - MODE ADMIN MANUEL ✨               ║
     ╠═══════════════════════════════════════════════════════╣
     ║   🚀 Créé avec ❤️ par Ismaël                        ║
     ║   🌐 Interface : https://mon-server-chat.onrender.com ║
     ║   🛠️ Dashboard : https://mon-server-chat.onrender.com/groq ║
+    ║   👑 Mode : Réponses manuelles (Admin)              ║
     ╚═══════════════════════════════════════════════════════╝
     `);
 });
