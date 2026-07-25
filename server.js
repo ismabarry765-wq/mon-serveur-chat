@@ -1,26 +1,32 @@
+// Charger les variables d'environnement depuis le fichier .env (sur PC)
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch'); // Si tu es sur Node < 18. Sur Node 18+, fetch est inclus nativement.
+const fetch = require('node-fetch'); // Requis si Node < 18 (natif sur Node 18+)
 const { Groq } = require('groq-sdk');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+// Augmentation de la limite pour recevoir les fichiers audio (Base64)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // =========================================================================
-// 🔑 CONFIGURATION DE LA CLÉ API GROQ
+// 🔑 CONFIGURATION GROQ
 // =========================================================================
-// Option A (Recommandée) : Utilise la variable d'environnement sur Render.
-// Option B : Remplace 'TA_CLE_API_GROQ_ICI' directement par ta vraie clé (ex: 'gsk_...').
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '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'; // <--- METS TA CLÉ API ICI SI TU NE L'AS PAS MISE SUR RENDER !
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-const groq = new Groq({ apiKey: GROQ_API_KEY });
+if (!GROQ_API_KEY) {
+    console.warn("⚠️ ATTENTION : La variable GROQ_API_KEY n'est pas configurée dans le fichier .env ou sur Render !");
+}
+
+const groq = new Groq({ apiKey: GROQ_API_KEY || "CLE_TEMPORAIRE" });
 
 // =========================================================================
-// 🔔 CONFIGURATION NOTIFICATIONS PUSH (NTFY.SH)
+// 🔔 CONFIGURATION NOTIFICATIONS PUSH (ntfy.sh)
 // =========================================================================
-// Choisis un nom unique et secret pour ton canal de notification.
-// Abonne-toi à ce même canal sur l'application mobile "ntfy" (Android/iOS).
 const NTFY_TOPIC = "nexus-ia-notifs-pannel-mobile";
 
 function envoyerNotificationMobile(titre, message) {
@@ -28,17 +34,16 @@ function envoyerNotificationMobile(titre, message) {
         method: 'POST',
         headers: { 'Title': titre },
         body: message
-    }).catch(err => console.error("Erreur d'envoi notification:", err));
+    }).catch(err => console.error("Erreur notification push:", err));
 }
 
 // =========================================================================
-// 🧠 MÉMOIRE TEMPORAIRE (Bases de données / Timers)
+// 🧠 MÉMOIRE TEMPORAIRE (Timers, Statuts & Discussions)
 // =========================================================================
-const pendingTimers = {}; // Stocke les décomptes de 5 secondes
-const statusChats = {};   // Stocke le statut ("Nexus IA réfléchit...", "libre", etc.)
-let discussions = {};     // Stocke l'historique des discussions (ChatId -> { username, messages: [] })
+const pendingTimers = {}; // Stocke les décomptes de 5s
+const statusChats = {};   // Stocke l'état du chat ("Nexus IA réfléchit...", "libre")
+let discussions = {};     // Stocke les discussions en mémoire
 
-// Helper pour récupérer ou créer une discussion
 function obtenirDiscussion(chatId, username) {
     if (!discussions[chatId]) {
         discussions[chatId] = {
@@ -51,75 +56,91 @@ function obtenirDiscussion(chatId, username) {
 }
 
 // =========================================================================
-// 🌐 ROUTES API
+// 🌐 ROUTES API PRINCIPALES
 // =========================================================================
 
-// 1. L'UTILISATEUR ENVOIE UN MESSAGE DEPUIS LE SITE WEB
+// 1. RÉCEPTION D'UN MESSAGE OU D'UN VOCAL DEPUIS LE WEB
 app.post('/envoyer-question', async (req, res) => {
-    const { username, message, chatId } = req.body;
+    const { username, message, audio, chatId } = req.body;
 
-    if (!chatId || !message) {
-        return res.status(400).json({ error: "Données manquantes (chatId ou message)." });
+    if (!chatId) {
+        return res.status(400).json({ error: "chatId requis." });
     }
 
     const chat = obtenirDiscussion(chatId, username);
-    chat.messages.push({ sender: username, text: message, timestamp: new Date() });
+    const estAudio = !!audio;
 
-    // Réponse rapide au navigateur client
-    res.json({ status: "ok", message: "Message reçu par le serveur" });
+    const nouveauMsg = {
+        id: Date.now().toString(),
+        sender: username,
+        text: estAudio ? "[🎙️ Message Vocal]" : message,
+        audioUrl: estAudio ? audio : null,
+        isAudio: estAudio,
+        timestamp: new Date()
+    };
 
-    // Alerte immédiate sur ton téléphone pour te dire de te connecter
+    chat.messages.push(nouveauMsg);
+    res.json({ status: "ok", message: "Message bien reçu par le serveur" });
+
+    // Notification sur le téléphone portable
     envoyerNotificationMobile(
-        `📩 Message de ${username}`,
-        `${message}\n(Tu as 5s pour répondre sur Termux !)`
+        `📩 ${estAudio ? 'Vocal' : 'Message'} de ${username}`,
+        estAudio ? "Nouveau vocal disponible 🎙️" : message
     );
 
-    // Annuler l'ancien chrono s'il y en avait un en cours pour ce chat
+    // Si c'est un vocal, on ne déclenche pas le texte Groq
+    if (estAudio) return;
+
+    // Annuler l'ancien chrono s'il y en avait un
     if (pendingTimers[chatId]) {
         clearTimeout(pendingTimers[chatId]);
     }
 
-    // Proposer d'attendre 5 secondes avant de déclencher Groq
+    // Chrono de 5 secondes avant la réponse automatique Groq
     pendingTimers[chatId] = setTimeout(async () => {
         try {
-            console.log(`🤖 5 secondes écoulées pour ${username}. Groq prend le relais...`);
+            console.log(`🤖 5s écoulées pour ${username}. Groq prend le relais...`);
 
-            // Mettre à jour le statut pour le Web
             statusChats[chatId] = "Nexus IA réfléchit...";
 
-            // Appel à l'API Groq
             const completion = await groq.chat.completions.create({
                 messages: [
                     { 
                         role: "system", 
-                        content: "Tu es Nexus IA, un assistant intelligent, poli et rapide. Réponds clairement à l'utilisateur." 
+                        content: "Tu es Nexus IA, un assistant intelligent, poli et réactif." 
                     },
-                    ...chat.messages.map(m => ({
-                        role: (m.sender === username) ? "user" : "assistant",
-                        content: m.text
-                    }))
+                    ...chat.messages
+                        .filter(m => !m.isAudio)
+                        .map(m => ({
+                            role: (m.sender === username) ? "user" : "assistant",
+                            content: m.text
+                        }))
                 ],
                 model: "llama-3.3-70b-versatile"
             });
 
             const reponseIA = completion.choices[0]?.message?.content || "Désolé, je n'ai pas pu générer de réponse.";
 
-            // Sauvegarder la réponse de Groq
-            chat.messages.push({ sender: "Nexus IA (Groq)", text: reponseIA, timestamp: new Date() });
+            chat.messages.push({
+                id: Date.now().toString(),
+                sender: "Nexus IA (Groq)",
+                text: reponseIA,
+                timestamp: new Date()
+            });
+
             statusChats[chatId] = "libre";
 
-            // Notification d'information
             envoyerNotificationMobile(`🤖 Groq a répondu à ${username}`, reponseIA);
-
             delete pendingTimers[chatId];
+
         } catch (error) {
-            console.error("Erreur lors de la génération Groq:", error);
+            console.error("Erreur Groq:", error);
             statusChats[chatId] = "libre";
         }
-    }, 5000); // 5000 millisecondes = 5 secondes
+    }, 5000);
 });
 
-// 2. L'ADMIN RÉPOND DEPUIS TERMUX (OU MANUELLEMENT / VIA /ia)
+// 2. RÉPONSE MANUELLE (TERMUX) OU COMMANDE /ia
 app.post('/repondre-humain', async (req, res) => {
     const { username, chatId, reponse, admin, forceIa } = req.body;
 
@@ -129,23 +150,23 @@ app.post('/repondre-humain', async (req, res) => {
         return res.status(404).json({ error: "Discussion introuvable." });
     }
 
-    // ANNULATION DU CHRONO : L'humain est intervenu !
+    // Interruption du timer automatique : l'admin est intervenu !
     if (pendingTimers[targetChatId]) {
         clearTimeout(pendingTimers[targetChatId]);
         delete pendingTimers[targetChatId];
-        console.log(`🛑 Timer Groq annulé : L'admin (${admin}) est intervenu.`);
+        console.log(`🛑 Interruption : Admin connecté pour ${targetChatId}. Timer annulé.`);
     }
 
     const chat = discussions[targetChatId];
 
-    // Si tu as tapé la commande '/ia' dans Termux
+    // Commande /ia forcée depuis Termux
     if (forceIa) {
         statusChats[targetChatId] = "Nexus IA réfléchit...";
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
-                    { role: "system", content: "Tu es Nexus IA. Réponds de façon précise." },
-                    ...chat.messages.map(m => ({
+                    { role: "system", content: "Tu es Nexus IA. Réponds à l'utilisateur." },
+                    ...chat.messages.filter(m => !m.isAudio).map(m => ({
                         role: (m.sender === chat.username) ? "user" : "assistant",
                         content: m.text
                     }))
@@ -154,59 +175,98 @@ app.post('/repondre-humain', async (req, res) => {
             });
 
             const reponseIA = completion.choices[0]?.message?.content || "Erreur IA.";
-            chat.messages.push({ sender: "Nexus IA (Groq)", text: reponseIA, timestamp: new Date() });
+            chat.messages.push({
+                id: Date.now().toString(),
+                sender: "Nexus IA (Groq)",
+                text: reponseIA,
+                timestamp: new Date()
+            });
+
             statusChats[targetChatId] = "libre";
             return res.json({ status: "success", mode: "force_ia", reponse: reponseIA });
         } catch (err) {
             statusChats[targetChatId] = "libre";
-            return res.status(500).json({ error: "Erreur Groq forcée" });
+            return res.status(500).json({ error: "Erreur lors du traitement Groq" });
         }
     }
 
-    // Réponse humaine normale tapée dans le panneau
-    chat.messages.push({ sender: admin || "Nexus ia", text: reponse, timestamp: new Date() });
-    statusChats[targetChatId] = "libre";
+    // Réponse humaine classique
+    chat.messages.push({
+        id: Date.now().toString(),
+        sender: admin || "Nexus ia",
+        text: reponse,
+        timestamp: new Date()
+    });
 
+    statusChats[targetChatId] = "libre";
     res.json({ status: "success", mode: "humain" });
 });
 
-// 3. RÉCUPÉRATION DES QUESTIONS NON RÉPONDUES (Pour l'interface mobile ai_gui.py)
+// 3. RECUPERER LES QUESTIONS / VOCAUX POUR L'APPLICATION ET TERMUX
 app.get('/recuperer-questions', (req, res) => {
     const questions = [];
     for (const cid in discussions) {
         const d = discussions[cid];
         const lastMsg = d.messages[d.messages.length - 1];
-        if (lastMsg && lastMsg.sender !== "Nexus ia" && !lastMsg.sender.includes("Groq")) {
+        if (lastMsg) {
             questions.push({
                 chatId: cid,
                 username: d.username,
-                message: lastMsg.text
+                message: lastMsg.text,
+                audio: lastMsg.isAudio ? lastMsg.audioUrl : null,
+                msgId: lastMsg.id
             });
         }
     }
     res.json({ questions });
 });
 
-// 4. HISTORIQUE D'UN CHAT SPÉCIFIQUE
+// 4. RECUPERER L'HISTORIQUE DE CHAT PAR PSEUDO
 app.get('/chats/:username', (req, res) => {
     const username = req.params.username;
     const match = Object.values(discussions).filter(d => d.username.toLowerCase() === username.toLowerCase());
     res.json({ chats: match });
 });
 
-// 5. STATUT DU CHAT EN TEMPS RÉEL (Pour afficher "Nexus IA réfléchit..." sur le web)
+// 5. STATUT DU CHAT ("Nexus IA réfléchit...")
 app.get('/statut-chat/:chatId', (req, res) => {
-    const statut = statusChats[req.params.chatId] || "libre";
-    res.json({ status: statut });
+    res.json({ status: statusChats[req.params.chatId] || "libre" });
 });
 
 // =========================================================================
-// 🚀 DÉMARRAGE DU SERVEUR
+// 🗑️ ROUTES DE SUPPRESSION
+// =========================================================================
+
+// Supprimer tout un chat
+app.delete('/supprimer-chat/:chatId', (req, res) => {
+    const cid = req.params.chatId;
+    if (discussions[cid]) {
+        delete discussions[cid];
+        delete statusChats[cid];
+        if (pendingTimers[cid]) clearTimeout(pendingTimers[cid]);
+        return res.json({ status: "success", message: "Chat supprimé." });
+    }
+    res.status(404).json({ error: "Chat introuvable." });
+});
+
+// Supprimer un message / vocal précis
+app.post('/supprimer-message', (req, res) => {
+    const { chatId, msgId } = req.body;
+    if (discussions[chatId]) {
+        discussions[chatId].messages = discussions[chatId].messages.filter(m => m.id !== msgId);
+        return res.json({ status: "success", message: "Message supprimé." });
+    }
+    res.status(404).json({ error: "Chat introuvable." });
+});
+
+// =========================================================================
+// 🚀 DÉMARRAGE DU SERVEUR SUR PC
 // =========================================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`=============================================`);
-    console.log(`🚀 Serveur Nexus IA démarré sur le port ${PORT}`);
-    console.log(`🔔 Notifications Push configurées sur : ntfy.sh/${NTFY_TOPIC}`);
-    console.log(`=============================================`);
+    console.log(`=================================================`);
+    console.log(`🚀 SERVEUR NEXUS IA EN ÉCOUTE SUR LE PORT : ${PORT}`);
+    console.log(`📍 URL locale : http://localhost:${PORT}`);
+    console.log(`🔔 Notifications Push : ntfy.sh/${NTFY_TOPIC}`);
+    console.log(`=================================================`);
 });
