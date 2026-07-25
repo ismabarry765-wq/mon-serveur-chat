@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const { Groq } = require('groq-sdk');
 
 const app = express();
 app.use(cors());
@@ -9,10 +8,6 @@ app.use(express.json());
 // ==========================================
 // 🌟 CONFIGURATION
 // ==========================================
-let GROQ_KEY = process.env.GROQ_API_KEY || "";
-let groq = GROQ_KEY ? new Groq({ apiKey: GROQ_KEY }) : null;
-let groqStatus = GROQ_KEY ? "activé" : "désactivé";
-
 let users = {};
 let conversations = {};
 
@@ -78,7 +73,7 @@ app.get('/', (req, res) => {
             .message.ai { align-self: flex-start; background: #f7f7f8; color: #0d0d0d; border-bottom-left-radius: 4px; }
             .message.admin { align-self: flex-start; background: #e0e7ff; color: #1e40af; border-bottom-left-radius: 4px; border-left: 3px solid #6366f1; }
             
-            /* Animation de réflexion */
+            /* Animation de réflexion style ChatGPT */
             .typing-indicator {
                 align-self: flex-start;
                 background: #f7f7f8;
@@ -636,7 +631,6 @@ app.get('/groq', (req, res) => {
                     });
                     if (res.ok) {
                         textarea.value = '';
-                        // Rafraîchir la session
                         refreshCurrentSession();
                     } else {
                         alert('❌ Erreur lors de l\'envoi');
@@ -652,7 +646,6 @@ app.get('/groq', (req, res) => {
                     const res = await fetch('/get-history?chatId=' + selectedChatId + '&username=' + selectedUsername);
                     if (res.ok) {
                         const data = await res.json();
-                        // Reconstruire la session dans allSessions
                         const session = allSessions.find(s => s.chatId === selectedChatId);
                         if (session) {
                             session.messages = data.messages;
@@ -675,7 +668,7 @@ app.get('/groq', (req, res) => {
 });
 
 // ==========================================
-// 🔐 API AUTHENTIFICATION
+// 🔐 API AUTHENTIFICATION (suite)
 // ==========================================
 app.post('/api/register', (req, res) => {
     const { username, password } = req.body;
@@ -725,8 +718,8 @@ app.post('/message', async (req, res) => {
     // Ajouter le message de l'utilisateur
     conversations[chatId].messages.push({ sender: username, text });
 
-    // Message d'attente avec Nexus IA
-    const waitingMsg = "Nexus IA réfléchit à votre message... Un administrateur vous répondra bientôt !";
+    // Message d'attente avec animation
+    const waitingMsg = "Nexus IA réfléchit...";
     conversations[chatId].messages.push({ 
         sender: "Groq IA", 
         text: waitingMsg 
