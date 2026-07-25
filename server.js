@@ -1,19 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const http = require('http');
-const socketIo = require('socket.io');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
 
 // ==========================================
 // 🌟 CONFIGURATION
@@ -22,96 +12,7 @@ let users = {};
 let conversations = {};
 
 // ==========================================
-// 🔌 SOCKET.IO - TEMPS RÉEL
-// ==========================================
-io.on('connection', (socket) => {
-    console.log('🔌 Nouveau client connecté:', socket.id);
-
-    // Rejoindre une salle de chat
-    socket.on('join-room', (chatId) => {
-        socket.join(chatId);
-        console.log('📁 Client rejoint la salle:', chatId);
-    });
-
-    // 📩 Utilisateur envoie un message
-    socket.on('user-message', (data) => {
-        const { chatId, username, text } = data;
-        
-        if (!conversations[chatId]) {
-            conversations[chatId] = { username, messages: [] };
-        }
-
-        // Ajouter le message
-        conversations[chatId].messages.push({ 
-            sender: username, 
-            text: text,
-            timestamp: new Date().toISOString()
-        });
-
-        // Message d'attente
-        const waitingMsg = "Nexus IA réfléchit...";
-        conversations[chatId].messages.push({ 
-            sender: "Groq IA", 
-            text: waitingMsg,
-            timestamp: new Date().toISOString()
-        });
-
-        console.log('💬 Message de', username, ':', text);
-
-        // 🔥 Diffuser à tous (admin + utilisateur)
-        io.emit('new-message', {
-            chatId,
-            sender: username,
-            text: text
-        });
-
-        // 🔥 Diffuser le message d'attente
-        io.emit('new-message', {
-            chatId,
-            sender: "Groq IA",
-            text: waitingMsg
-        });
-    });
-
-    // 👑 Admin répond
-    socket.on('admin-message', (data) => {
-        const { chatId, text, admin } = data;
-        
-        if (!conversations[chatId]) {
-            return;
-        }
-
-        // 🔥 Supprimer "Nexus IA réfléchit..."
-        conversations[chatId].messages = conversations[chatId].messages.filter(
-            m => !(m.sender === "Groq IA" && m.text === "Nexus IA réfléchit...")
-        );
-
-        // Ajouter la réponse
-        conversations[chatId].messages.push({ 
-            sender: admin || "Nexus IA", 
-            text: text,
-            isAdmin: true,
-            timestamp: new Date().toISOString()
-        });
-
-        console.log('👑 Admin répond:', text);
-
-        // 🔥 Diffuser à TOUS les clients (admin + utilisateur)
-        io.emit('admin-reply', {
-            chatId,
-            sender: admin || "Nexus IA",
-            text: text
-        });
-    });
-
-    // Déconnexion
-    socket.on('disconnect', () => {
-        console.log('🔌 Client déconnecté:', socket.id);
-    });
-});
-
-// ==========================================
-// 🌐 INTERFACE UTILISATEUR
+// 🎨 INTERFACE UTILISATEUR (AVEC RAFRAÎCHISSEMENT AUTO)
 // ==========================================
 app.get('/', (req, res) => {
     res.send(`
@@ -121,7 +22,6 @@ app.get('/', (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Nexus Chat IA - Par Ismaël</title>
-        <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
             body { background-color: #ffffff; color: #0d0d0d; display: flex; height: 100vh; overflow: hidden; }
@@ -252,7 +152,7 @@ app.get('/', (req, res) => {
                 <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
                 <span style="font-size: 0.9rem; font-weight: 500; color: #4b5563;">💬 Conversation avec Nexus IA</span>
                 <span style="font-size: 0.8rem; color: #6b7280;">par Ismaël</span>
-                <span id="status-indicator" style="font-size:0.8rem; color:#10b981;">🟢 En ligne</span>
+                <span style="font-size:0.8rem; color:#10b981;">🟢 En ligne</span>
             </header>
 
             <div id="chat-container">
@@ -272,13 +172,10 @@ app.get('/', (req, res) => {
         </div>
 
         <script>
-            // ==========================================
-            // 🔌 SOCKET.IO - TEMPS RÉEL
-            // ==========================================
-            const socket = io();
             let isSignUp = false;
             let currentUser = localStorage.getItem('nexus_user') || null;
             let isTyping = false;
+            let refreshInterval = null;
             
             let chatId = localStorage.getItem('nexus_chatId');
             if (!chatId) {
@@ -286,62 +183,29 @@ app.get('/', (req, res) => {
                 localStorage.setItem('nexus_chatId', chatId);
             }
 
-            // Rejoindre la salle de chat
-            socket.emit('join-room', chatId);
-
-            // 🔥 Écouter les nouveaux messages
-            socket.on('new-message', (data) => {
-                if (data.chatId === chatId) {
-                    // Supprimer l'indicateur de frappe si présent
-                    removeTypingIndicator();
-                    
-                    // Déterminer le type de message
-                    let type = 'user';
-                    if (data.sender === 'Groq IA') type = 'ai';
-                    else if (data.sender === 'Nexus IA' || data.sender === 'Admin') type = 'admin';
-                    
-                    // Supprimer le message "réfléchit" si c'est une réponse admin
-                    if (type === 'admin') {
-                        const container = document.getElementById('chat-container');
-                        const messages = container.querySelectorAll('.message.ai');
-                        messages.forEach(msg => {
-                            if (msg.textContent === 'Nexus IA réfléchit...') {
-                                msg.remove();
-                            }
-                        });
+            // 🔥 Rafraîchissement automatique toutes les 2 secondes
+            function startAutoRefresh() {
+                if (refreshInterval) clearInterval(refreshInterval);
+                refreshInterval = setInterval(() => {
+                    if (currentUser) {
+                        loadChatHistory();
                     }
-                    
-                    appendMsg(type, data.text);
-                }
-            });
+                }, 2000);
+            }
 
-            // 🔥 Écouter les réponses admin
-            socket.on('admin-reply', (data) => {
-                if (data.chatId === chatId) {
-                    removeTypingIndicator();
-                    
-                    // Supprimer tous les "Nexus IA réfléchit..."
-                    const container = document.getElementById('chat-container');
-                    const messages = container.querySelectorAll('.message.ai');
-                    messages.forEach(msg => {
-                        if (msg.textContent === 'Nexus IA réfléchit...') {
-                            msg.remove();
-                        }
-                    });
-                    
-                    appendMsg('admin', data.text);
-                    showToast('📩 Nouvelle réponse de l\'admin !');
+            function stopAutoRefresh() {
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
                 }
-            });
+            }
 
-            // ==========================================
-            // 📋 FONCTIONS DE L'INTERFACE
-            // ==========================================
             window.onload = () => {
                 if (currentUser) {
                     document.getElementById('auth-modal').style.display = 'none';
                     document.getElementById('profile-name').innerHTML = "👤 " + currentUser;
                     loadChatHistory();
+                    startAutoRefresh();
                 }
             };
 
@@ -389,6 +253,7 @@ app.get('/', (req, res) => {
                         document.getElementById('auth-modal').style.display = 'none';
                         showToast(data.message || "Bienvenue sur Nexus IA ! 🎉");
                         loadChatHistory();
+                        startAutoRefresh();
                     } else {
                         showToast(data.error, true);
                     }
@@ -398,6 +263,7 @@ app.get('/', (req, res) => {
             }
 
             function logout() {
+                stopAutoRefresh();
                 localStorage.removeItem('nexus_user');
                 localStorage.removeItem('nexus_chatId');
                 location.reload();
@@ -416,6 +282,7 @@ app.get('/', (req, res) => {
                     const data = await res.json();
                     if (res.ok) {
                         showToast("Compte supprimé !");
+                        stopAutoRefresh();
                         localStorage.removeItem('nexus_user');
                         localStorage.removeItem('nexus_chatId');
                         setTimeout(() => location.reload(), 1500);
@@ -506,12 +373,29 @@ app.get('/', (req, res) => {
                 isTyping = true;
                 showTypingIndicator();
 
-                // 🔥 Envoyer via Socket.IO
-                socket.emit('user-message', {
-                    chatId: chatId,
-                    username: currentUser,
-                    text: text
-                });
+                try {
+                    const res = await fetch('/message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chatId, username: currentUser, text })
+                    });
+                    const data = await res.json();
+                    
+                    removeTypingIndicator();
+                    isTyping = false;
+                    
+                    if (data.reply) {
+                        if (data.isAdmin) {
+                            appendMsg('admin', data.reply);
+                        } else {
+                            appendMsg('ai', data.reply);
+                        }
+                    }
+                } catch(e) {
+                    removeTypingIndicator();
+                    isTyping = false;
+                    appendMsg('ai', "Erreur de connexion. Réessaie !");
+                }
             }
 
             function appendMsg(type, text, scroll = true) {
@@ -531,7 +415,6 @@ app.get('/', (req, res) => {
             function newChat() {
                 chatId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
                 localStorage.setItem('nexus_chatId', chatId);
-                socket.emit('join-room', chatId);
                 document.getElementById('chat-container').innerHTML = \`
                     <div style="text-align: center; color: #9ca3af; padding: 40px 0;">
                         <div style="font-size: 2rem; margin-bottom: 10px;">✨</div>
@@ -557,14 +440,13 @@ app.get('/', (req, res) => {
 // 🚀 DASHBOARD ADMIN
 // ==========================================
 app.get('/groq', (req, res) => {
-    res.send(`
+    res.send(\`
     <!DOCTYPE html>
     <html lang="fr">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Admin Dashboard - Nexus IA</title>
-        <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
             body { background: #f8fafc; color: #0d0d0d; display: flex; height: 100vh; overflow: hidden; }
@@ -594,21 +476,13 @@ app.get('/groq', (req, res) => {
             .btn-send-reply { background: #6366f1; color: white; }
             .btn-clear { background: #ef4444; color: white; }
             .btn-refresh { background: #10b981; color: white; }
-            .typing-dots { display: inline-flex; gap: 3px; margin-left: 8px; }
-            .typing-dots span { width: 6px; height: 6px; background: #6366f1; border-radius: 50%; display: inline-block; animation: bounce 1.4s infinite ease-in-out; }
-            .typing-dots span:nth-child(1) { animation-delay: 0s; }
-            .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-            .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-            @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
-            .status-online { color: #10b981; }
-            .status-offline { color: #ef4444; }
         </style>
     </head>
     <body>
         <div id="sidebar">
             <div class="sidebar-header">
                 <span>🤖 Activité Utilisateurs</span>
-                <span id="status-indicator" class="status-online">● Live</span>
+                <span id="status-indicator" style="color:#10b981;">● Live</span>
             </div>
             <div class="chat-list" id="users-list">
                 <div style="padding: 20px; color: #94a3b8; text-align: center; font-size: 0.9rem;">En attente de discussions...</div>
@@ -616,8 +490,8 @@ app.get('/groq', (req, res) => {
         </div>
         <div id="main-content">
             <header>
-                <span>📊 Dashboard Admin <span id="user-count" style="font-size:0.8rem; font-weight:400;">(0 connecté)</span></span>
-                <small>Répondre aux utilisateurs en temps réel</small>
+                <span>📊 Dashboard Admin <span id="user-count" style="font-size:0.8rem; font-weight:400;">(0 actif)</span></span>
+                <small>Répondre aux utilisateurs</small>
             </header>
             <div id="monitor-container">
                 <div style="text-align: center; color: #94a3b8; margin-top: 60px; font-size: 1rem;">
@@ -629,36 +503,10 @@ app.get('/groq', (req, res) => {
         </div>
 
         <script>
-            // ==========================================
-            // 🔌 SOCKET.IO - TEMPS RÉEL (ADMIN)
-            // ==========================================
-            const socket = io();
             let allSessions = [];
             let selectedChatId = null;
             let selectedUsername = null;
 
-            // 🔥 Écouter les nouveaux messages
-            socket.on('new-message', (data) => {
-                // Rafraîchir la liste des sessions
-                fetchActivity();
-                
-                // Si la session est sélectionnée, rafraîchir l'affichage
-                if (selectedChatId === data.chatId) {
-                    refreshCurrentSession();
-                }
-            });
-
-            // 🔥 Écouter les réponses admin (pour les autres admins)
-            socket.on('admin-reply', (data) => {
-                fetchActivity();
-                if (selectedChatId === data.chatId) {
-                    refreshCurrentSession();
-                }
-            });
-
-            // ==========================================
-            // 📋 FONCTIONS
-            // ==========================================
             async function fetchActivity() {
                 try {
                     const res = await fetch('/recuperer-questions');
@@ -752,29 +600,29 @@ app.get('/groq', (req, res) => {
                 }
 
                 try {
-                    // 🔥 Envoyer via Socket.IO
-                    socket.emit('admin-message', {
-                        chatId: selectedChatId,
-                        text: text,
-                        admin: 'Nexus IA'
+                    const res = await fetch('/repondre-humain', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            chatId: selectedChatId, 
+                            reponse: text, 
+                            admin: 'Nexus IA'
+                        })
                     });
-
-                    textarea.value = '';
-                    showToast('✅ Réponse envoyée en temps réel !');
-                    
-                    // Rafraîchir
-                    setTimeout(() => {
+                    if (res.ok) {
+                        textarea.value = '';
                         refreshCurrentSession();
                         fetchActivity();
-                    }, 500);
-                    
+                        showToast('✅ Réponse envoyée !');
+                    } else {
+                        alert('❌ Erreur lors de l\'envoi');
+                    }
                 } catch(e) {
                     alert('❌ Erreur: ' + e.message);
                 }
             }
 
             function showToast(msg) {
-                // Créer un toast temporaire
                 const toast = document.createElement('div');
                 toast.style.cssText = \`
                     position: fixed; bottom: 20px; right: 20px;
@@ -816,7 +664,7 @@ app.get('/groq', (req, res) => {
         </script>
     </body>
     </html>
-    `);
+    \`);
 });
 
 // ==========================================
@@ -855,8 +703,72 @@ app.post('/api/delete-account', (req, res) => {
 });
 
 // ==========================================
-// 💬 API CONVERSATION (REST)
+// 💬 API CONVERSATION (CORRIGÉE)
 // ==========================================
+app.post('/message', async (req, res) => {
+    const { chatId, username, text } = req.body;
+    if (!chatId || !username || !text) {
+        return res.status(400).json({ error: "Données manquantes" });
+    }
+
+    // Utiliser le chatId envoyé par le client
+    if (!conversations[chatId]) {
+        conversations[chatId] = { username, messages: [] };
+        console.log("📁 Nouvelle conversation:", chatId);
+    }
+
+    conversations[chatId].messages.push({ sender: username, text });
+    console.log("💬", username, ":", text);
+
+    const waitingMsg = "Nexus IA réfléchit...";
+    conversations[chatId].messages.push({ 
+        sender: "Groq IA", 
+        text: waitingMsg 
+    });
+    
+    res.json({ reply: waitingMsg, isAdmin: false });
+});
+
+// ==========================================
+// 👑 API ADMIN - CORRIGÉE
+// ==========================================
+app.post('/repondre-humain', (req, res) => {
+    const { chatId, reponse, admin } = req.body;
+    if (!chatId || !reponse) {
+        return res.status(400).json({ error: "Données manquantes" });
+    }
+
+    if (!conversations[chatId]) {
+        return res.status(404).json({ error: "Conversation introuvable" });
+    }
+
+    // 🔥 Supprimer "Nexus IA réfléchit..."
+    conversations[chatId].messages = conversations[chatId].messages.filter(
+        m => !(m.sender === "Groq IA" && m.text === "Nexus IA réfléchit...")
+    );
+
+    conversations[chatId].messages.push({ 
+        sender: admin || "Nexus IA", 
+        text: reponse,
+        isAdmin: true
+    });
+
+    console.log("👑 Admin:", reponse);
+    res.json({ success: true, message: "Réponse envoyée" });
+});
+
+// Récupérer toutes les conversations
+app.get('/recuperer-questions', (req, res) => {
+    const questions = Object.keys(conversations).map(chatId => ({
+        chatId,
+        username: conversations[chatId].username,
+        messages: conversations[chatId].messages,
+        messageCount: conversations[chatId].messages.length
+    }));
+    res.json({ questions });
+});
+
+// Récupérer l'historique d'une conversation
 app.get('/get-history', (req, res) => {
     const { chatId, username } = req.query;
     if (!chatId || !username) {
@@ -871,29 +783,19 @@ app.get('/get-history', (req, res) => {
     res.json({ messages: chat.messages });
 });
 
-app.get('/recuperer-questions', (req, res) => {
-    const questions = Object.keys(conversations).map(chatId => ({
-        chatId,
-        username: conversations[chatId].username,
-        messages: conversations[chatId].messages,
-        messageCount: conversations[chatId].messages.length
-    }));
-    res.json({ questions });
-});
-
 // ==========================================
 // 🚀 DÉMARRAGE
 // ==========================================
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(\`
     ╔═══════════════════════════════════════════════════════╗
-    ║     ✨ NEXUS IA 3.0 - SOCKET.IO ✨                  ║
+    ║     ✨ NEXUS IA 3.0 - Version Stable ✨             ║
     ╠═══════════════════════════════════════════════════════╣
     ║   🚀 Créé avec ❤️ par Ismaël                        ║
     ║   🌐 Interface : https://mon-server-chat.onrender.com ║
     ║   🛠️ Dashboard : https://mon-server-chat.onrender.com/groq ║
-    ║   🔌 Socket.IO activé - Temps réel !                ║
+    ║   ⚡ Rafraîchissement automatique toutes les 2s    ║
     ╚═══════════════════════════════════════════════════════╝
     \`);
 });
