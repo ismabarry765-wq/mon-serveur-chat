@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus IA - Centre des Vocaux & Sauvegardes</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #fff; padding: 20px; }
+        h1 { color: #00e676; text-align: center; margin-bottom: 5px; }
+        .status-badge { font-size: 0.85em; color: #aaa; text-align: center; margin-bottom: 20px; }
+        
+        .box { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
+        input[type="text"] { width: 65%; padding: 10px; border-radius: 4px; border: 1px solid #444; background: #222; color: white; }
+        button { background: #00e676; border: none; padding: 10px 15px; font-weight: bold; cursor: pointer; border-radius: 4px; color: #000; }
+        .btn-danger { background: #ff5252; color: white; }
+        .btn-trans { background: #29b6f6; color: black; }
+        .btn-save { background: #ab47bc; color: white; }
+
+        .card { background: #1e1e1e; padding: 15px; border-radius: 10px; margin-bottom: 15px; border-left: 5px solid #00e676; position: relative; animation: fadeIn 0.4s ease-in-out; }
+        .user { font-weight: bold; color: #00bcd4; font-size: 1.1em; display: flex; justify-content: space-between; align-items: center; }
+        audio { width: 100%; margin-top: 10px; }
+        .subtitles { background: #2a2a2a; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #ffeb3b; }
+        .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <h1>🎙️ Nexus IA - Studio Vocaux & Sauvegardes</h1>
+    <div class="status-badge" id="live-status">🟢 Surveillance automatique active...</div>
+
+    <div class="box">
+        <h3>🔑 Clé API Groq (Sauvegardée à jamais)</h3>
+        <input type="text" id="groqKey" placeholder="Colle ta clé API Groq (gsk_...) ici">
+        <button onclick="sauvegarderCle()">💾 Sauvegarder la clé</button>
+        <button onclick="demanderPermissionNotifs()" style="background:#ff9800; color:black; margin-left:5px;">🔔 Activer les notifications</button>
+        <span id="keyStatus" style="margin-left: 10px; color: #00e676;"></span>
+    </div>
+
+    <div class="box">
+        <h3>🔍 Menu Sauvegardes / Recherche par Pseudo</h3>
+        <input type="text" id="searchUser" placeholder="Entre le pseudo de la personne (ex: isbru)..." oninput="filtrerVocaux()">
+        <button onclick="reinitialiserFiltre()" class="btn-trans">Tous les vocaux</button>
+    </div>
+
+    <div id="liste-vocaux">En attente de messages vocaux...</div>
+
+    <script>
+        const SERVER_URL = "https://mon-serveur-chat.onrender.com"; // Mets ton URL Render
+        let vocauxEnMemoire = []; // Stockage local des vocaux
+        let vocauxAffichesIds = new Set();
+
+        // 1. Initialisation
+        window.onload = () => {
+            const savedKey = localStorage.getItem('GROQ_API_KEY_WEB');
+            if (savedKey) {
+                document.getElementById('groqKey').value = savedKey;
+                document.getElementById('keyStatus').innerText = "✅ Clé active";
+            }
+            chargerSauvegardesLocales();
+            demanderPermissionNotifs();
+
+            setInterval(verifierNouveauxVocaux, 3000);
+            verifierNouveauxVocaux();
+        };
+
+        function sauvegarderCle() {
+            const key = document.getElementById('groqKey').value.trim();
+            if (key) {
+                localStorage.setItem('GROQ_API_KEY_WEB', key);
+                document.getElementById('keyStatus').innerText = "✅ Clé enregistrée !";
+            }
+        }
+
+        function demanderPermissionNotifs() {
+            if ("Notification" in window && Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
+        }
+
+        function envoyerNotifNavigateur(titre, corps) {
+            if ("Notification" in window && Notification.permission === "granted") {
+                new Notification(titre, { body: corps, icon: '🎙️' });
+            }
+        }
+
+        // 2. Auto-sauvegarde et chargement
+        function chargerSauvegardesLocales() {
+            const sauvegarde = localStorage.getItem('NEXUS_VOCAUX_SAVED');
+            if (sauvegarde) {
+                vocauxEnMemoire = JSON.parse(sauvegarde);
+                vocauxEnMemoire.forEach(v => vocauxAffichesIds.add(v.msgId));
+                afficherTousLesVocaux(vocauxEnMemoire);
+            }
+        }
+
+        function enregistrerLocalement() {
+            localStorage.setItem('NEXUS_VOCAUX_SAVED', JSON.stringify(vocauxEnMemoire));
+        }
+
+        // 3. Scan automatique
+        async function verifierNouveauxVocaux() {
+            try {
+                const res = await fetch(`${SERVER_URL}/recuperer-questions`);
+                const data = await res.json();
+
+                data.questions.forEach(q => {
+                    if (q.audio && !vocauxAffichesIds.has(q.msgId)) {
+                        vocauxAffichesIds.add(q.msgId);
+
+                        const nouveauVocal = {
+                            chatId: q.chatId,
+                            msgId: q.msgId,
+                            username: q.username,
+                            audio: q.audio,
+                            text: "⏳ Transcription automatique...",
+                            date: new Date().toLocaleTimeString()
+                        };
+
+                        // Auto-sauvegarde
+                        vocauxEnMemoire.unshift(nouveauVocal);
+                        enregistrerLocalement();
+
+                        // Notifications
+                        envoyerNotifNavigateur(`🎙️ Nouveau Vocal de ${q.username}`, "Un message vocal est disponible !");
+                        envoyerNotifNavigateur(`⚠️ Rappel Panneau Admin`, `L'IA va répondre à ${q.username}. Connecte-toi au panneau !`);
+
+                        // Transcription automatique immédiate
+                        transcrireAutomatique(nouveauVocal);
+                        afficherTousLesVocaux(vocauxEnMemoire);
+                    }
+                });
+            } catch (err) {
+                document.getElementById('live-status').innerText = "🔴 Problème de connexion...";
+            }
+        }
+
+        // 4. Affichage et Filtre par Pseudo
+        function afficherTousLesVocaux(liste) {
+            const container = document.getElementById('liste-vocaux');
+            if (liste.length === 0) {
+                container.innerHTML = "<p>Aucun message vocal trouvé.</p>";
+                return;
+            }
+
+            container.innerHTML = "";
+            liste.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.id = `card-${item.msgId}`;
+                div.innerHTML = `
+                    <div class="user">
+                        <span>👤 ${item.username} <small style="color:#aaa; font-size:0.7em;">(${item.date || ''})</small></span>
+                        <button class="btn-danger" onclick="supprimerVocal('${item.chatId}', '${item.msgId}')">🗑️ Supprimer</button>
+                    </div>
+                    <audio controls src="${item.audio}"></audio>
+                    <div class="subtitles" id="sub-${item.msgId}">💬 Sous-titres : ${item.text}</div>
+                    <div class="actions">
+                        <button class="btn-trans" onclick="traduireTexte('${item.msgId}')">🌐 Traduire en Français</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function filtrerVocaux() {
+            const recherche = document.getElementById('searchUser').value.trim().toLowerCase();
+            if (!recherche) {
+                afficherTousLesVocaux(vocauxEnMemoire);
+                return;
+            }
+
+            const filtrés = vocauxEnMemoire.filter(v => v.username.toLowerCase().includes(recherche));
+            afficherTousLesVocaux(filtrés);
+        }
+
+        function reinitialiserFiltre() {
+            document.getElementById('searchUser').value = "";
+            afficherTousLesVocaux(vocauxEnMemoire);
+        }
+
+        // 5. Groq Whisper (Sous-titres & Traduction)
+        async function transcrireAutomatique(vocalObj) {
+            const apiKey = localStorage.getItem('GROQ_API_KEY_WEB');
+            if (!apiKey) return;
+
+            try {
+                const fetchRes = await fetch(vocalObj.audio);
+                const blob = await fetchRes.blob();
+
+                const formData = new FormData();
+                formData.append("file", blob, "audio.wav");
+                formData.append("model", "whisper-large-v3-turbo");
+
+                const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${apiKey}` },
+                    body: formData
+                });
+
+                const result = await groqRes.json();
+                if (result.text) {
+                    vocalObj.text = result.text;
+                    enregistrerLocalement();
+                    const subBox = document.getElementById(`sub-${vocalObj.msgId}`);
+                    if (subBox) subBox.innerText = `💬 Sous-titres : "${result.text}"`;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function traduireTexte(msgId) {
+            const apiKey = localStorage.getItem('GROQ_API_KEY_WEB');
+            const subBox = document.getElementById(`sub-${msgId}`);
+            const item = vocauxEnMemoire.find(v => v.msgId === msgId);
+
+            if (!apiKey || !item || !item.text) {
+                alert("Impossible de traduire pour le moment.");
+                return;
+            }
+
+            subBox.innerText = "⏳ Traduction en cours...";
+
+            try {
+                const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "llama-3.3-70b-versatile",
+                        messages: [
+                            { role: "system", content: "Traduis le texte suivant en français parfait. Ne renvoie QUE la traduction." },
+                            { role: "user", content: item.text }
+                        ]
+                    })
+                });
+
+                const data = await res.json();
+                const traduction = data.choices[0]?.message?.content || item.text;
+                subBox.innerText = `🇫🇷 Traduction : "${traduction}"`;
+            } catch (err) {
+                subBox.innerText = "❌ Erreur lors de la traduction.";
+            }
+        }
+
+        // 6. Suppression
+        async function supprimerVocal(chatId, msgId) {
+            if (!confirm("Supprimer ce vocal ?")) return;
+
+            try {
+                await fetch(`${SERVER_URL}/supprimer-message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ chatId, msgId })
+                });
+            } catch (err) {}
+
+            vocauxEnMemoire = vocauxEnMemoire.filter(v => v.msgId !== msgId);
+            enregistrerLocalement();
+            afficherTousLesVocaux(vocauxEnMemoire);
+        }
+    </script>
+</body>
+</html>
