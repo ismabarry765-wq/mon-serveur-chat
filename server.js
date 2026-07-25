@@ -11,6 +11,7 @@ app.use(express.json());
 // ==========================================
 let GROQ_KEY = process.env.GROQ_API_KEY || "";
 let groq = GROQ_KEY ? new Groq({ apiKey: GROQ_KEY }) : null;
+let groqStatus = GROQ_KEY ? "activé" : "désactivé";
 
 let users = {};
 let conversations = {};
@@ -69,12 +70,51 @@ app.get('/', (req, res) => {
             .toggle-btn { background: none; border: none; font-size: 1.4rem; cursor: pointer; padding: 6px; border-radius: 8px; transition: background 0.2s; }
             .toggle-btn:hover { background: #f3f4f6; }
             #chat-container { flex: 1; overflow-y: auto; padding: 30px 20px; display: flex; flex-direction: column; gap: 20px; max-width: 800px; width: 100%; margin: 0 auto; }
+            
             .message { padding: 14px 20px; border-radius: 14px; max-width: 85%; line-height: 1.6; font-size: 0.95rem; animation: fadeIn 0.3s ease; }
             @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            
             .message.user { align-self: flex-end; background: #f3f4f6; color: #0d0d0d; border-bottom-right-radius: 4px; }
             .message.ai { align-self: flex-start; background: #f7f7f8; color: #0d0d0d; border-bottom-left-radius: 4px; }
-            .message.typing { opacity: 0.6; font-style: italic; }
             .message.admin { align-self: flex-start; background: #e0e7ff; color: #1e40af; border-bottom-left-radius: 4px; border-left: 3px solid #6366f1; }
+            
+            /* Animation de réflexion */
+            .typing-indicator {
+                align-self: flex-start;
+                background: #f7f7f8;
+                padding: 12px 20px;
+                border-radius: 14px;
+                border-bottom-left-radius: 4px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-width: 80px;
+            }
+            .typing-indicator span {
+                color: #6b7280;
+                font-size: 0.95rem;
+            }
+            .typing-dots {
+                display: flex;
+                gap: 4px;
+                align-items: center;
+            }
+            .typing-dots span {
+                width: 8px;
+                height: 8px;
+                background: #6366f1;
+                border-radius: 50%;
+                display: inline-block;
+                animation: bounce 1.4s infinite ease-in-out;
+            }
+            .typing-dots span:nth-child(1) { animation-delay: 0s; }
+            .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+            .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+            
+            @keyframes bounce {
+                0%, 60%, 100% { transform: translateY(0); }
+                30% { transform: translateY(-8px); }
+            }
 
             #input-container { padding: 16px 24px; background: #ffffff; border-top: 1px solid #e5e7eb; max-width: 800px; width: 100%; margin: 0 auto; }
             .input-box { display: flex; gap: 12px; border: 2px solid #e5e7eb; border-radius: 28px; padding: 6px 6px 6px 24px; transition: border-color 0.2s; }
@@ -276,6 +316,31 @@ app.get('/', (req, res) => {
                 } catch(e) {}
             }
 
+            function showTypingIndicator() {
+                const container = document.getElementById('chat-container');
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'typing-indicator';
+                typingDiv.id = 'typing-indicator';
+                typingDiv.innerHTML = \`
+                    <span>Nexus IA réfléchit</span>
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                \`;
+                container.appendChild(typingDiv);
+                container.scrollTop = container.scrollHeight;
+                return typingDiv;
+            }
+
+            function removeTypingIndicator() {
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+
             async function sendMsg() {
                 if (!currentUser) return showToast("Connecte-toi d'abord !", true);
                 const input = document.getElementById('user-input');
@@ -287,15 +352,13 @@ app.get('/', (req, res) => {
                     container.innerHTML = '';
                 }
 
+                // Afficher immédiatement le message de l'utilisateur
                 appendMsg('user', text);
                 input.value = '';
-
-                const typingDiv = document.createElement('div');
-                typingDiv.className = 'message ai typing';
-                typingDiv.innerText = '✍️ Nexus IA réfléchit...';
-                container.appendChild(typingDiv);
-                container.scrollTop = container.scrollHeight;
                 isTyping = true;
+
+                // Afficher l'indicateur de réflexion
+                showTypingIndicator();
 
                 try {
                     const res = await fetch('/message', {
@@ -305,11 +368,11 @@ app.get('/', (req, res) => {
                     });
                     const data = await res.json();
                     
-                    container.removeChild(typingDiv);
+                    // Supprimer l'indicateur
+                    removeTypingIndicator();
                     isTyping = false;
                     
                     if (data.reply) {
-                        // Si c'est une réponse admin, on l'affiche différemment
                         if (data.isAdmin) {
                             appendMsg('admin', data.reply);
                         } else {
@@ -317,7 +380,7 @@ app.get('/', (req, res) => {
                         }
                     }
                 } catch(e) {
-                    container.removeChild(typingDiv);
+                    removeTypingIndicator();
                     isTyping = false;
                     appendMsg('ai', "Erreur de connexion. Réessaie !");
                 }
@@ -391,10 +454,51 @@ app.get('/groq', (req, res) => {
             .card { padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); animation: slideIn 0.3s ease; }
             @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
             .card-question { border-left: 4px solid #6366f1; }
-            .card-thought { border-left: 4px solid #f59e0b; background: #fffbeb; font-style: italic; color: #92400e; }
             .card-response { border-left: 4px solid #10b981; background: #f0fdf4; }
             .card-admin { border-left: 4px solid #8b5cf6; background: #f5f3ff; }
             .card .timestamp { font-size: 0.75rem; color: #94a3b8; margin-top: 8px; }
+
+            .admin-response-area {
+                background: #ffffff;
+                padding: 16px;
+                border-radius: 12px;
+                border: 2px solid #e2e8f0;
+                margin-bottom: 16px;
+            }
+            .admin-response-area textarea {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                font-size: 0.95rem;
+                resize: vertical;
+                font-family: inherit;
+                transition: border-color 0.2s;
+            }
+            .admin-response-area textarea:focus {
+                border-color: #6366f1;
+                outline: none;
+            }
+            .admin-response-area .btn-group {
+                display: flex;
+                gap: 8px;
+                margin-top: 8px;
+                flex-wrap: wrap;
+            }
+            .admin-response-area .btn-group button {
+                padding: 10px 24px;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: transform 0.1s;
+            }
+            .admin-response-area .btn-group button:hover {
+                transform: scale(1.02);
+            }
+            .btn-send-reply { background: #6366f1; color: white; }
+            .btn-clear { background: #ef4444; color: white; }
+            .btn-refresh { background: #10b981; color: white; }
         </style>
     </head>
     <body>
@@ -425,6 +529,7 @@ app.get('/groq', (req, res) => {
         <script>
             let allSessions = [];
             let selectedChatId = null;
+            let selectedUsername = null;
 
             async function fetchActivity() {
                 try {
@@ -448,10 +553,11 @@ app.get('/groq', (req, res) => {
                     const div = document.createElement('div');
                     div.className = 'chat-item';
                     const msgCount = s.messages ? s.messages.length : 0;
+                    const lastMsg = s.messages && s.messages.length > 0 ? s.messages[s.messages.length - 1].text.substring(0, 30) : '';
                     div.innerHTML = \`
                         <strong>👤 \${s.username}</strong>
                         <span class="badge">\${msgCount} msg</span>
-                        <br><span style="font-size:0.75rem; color:#64748b;">ID: \${s.chatId.substring(0, 12)}...</span>
+                        <br><span style="font-size:0.75rem; color:#64748b;">\${lastMsg ? lastMsg + '...' : 'Nouvelle conversation'}</span>
                     \`;
                     div.onclick = () => showSessionDetails(s);
                     list.appendChild(div);
@@ -460,21 +566,25 @@ app.get('/groq', (req, res) => {
 
             function showSessionDetails(s) {
                 selectedChatId = s.chatId;
+                selectedUsername = s.username;
                 const container = document.getElementById('monitor-container');
                 container.innerHTML = \`
                     <div style="margin-bottom: 16px;">
                         <h3 style="color: #1e293b; display: flex; align-items: center; gap: 12px;">
                             <span>👤 \${s.username}</span>
-                            <span style="font-size: 0.8rem; color: #94a3b8; font-weight: 400;">Session: \${s.chatId}</span>
+                            <span style="font-size: 0.8rem; color: #94a3b8; font-weight: 400;">Session: \${s.chatId.substring(0, 12)}...</span>
                         </h3>
                     </div>
-                    <div style="margin-bottom: 16px;">
-                        <textarea id="admin-response" rows="3" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:8px; font-size:0.95rem; resize:vertical;" placeholder="Écris ta réponse ici..."></textarea>
-                        <div style="margin-top:8px; display:flex; gap:8px;">
-                            <button onclick="sendAdminReply()" style="background: #6366f1; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">📤 Envoyer la réponse</button>
-                            <button onclick="clearAdminReply()" style="background: #ef4444; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">🗑️ Effacer</button>
+                    
+                    <div class="admin-response-area">
+                        <textarea id="admin-response" rows="3" placeholder="Écris ta réponse ici..."></textarea>
+                        <div class="btn-group">
+                            <button class="btn-send-reply" onclick="sendAdminReply()">📤 Envoyer la réponse</button>
+                            <button class="btn-clear" onclick="clearAdminReply()">🗑️ Effacer</button>
+                            <button class="btn-refresh" onclick="refreshCurrentSession()">🔄 Rafraîchir</button>
                         </div>
                     </div>
+                    
                     <hr style="border:1px solid #e2e8f0; margin:16px 0;">
                     <h4 style="color:#64748b; margin-bottom:12px;">📜 Historique des messages</h4>
                 \`;
@@ -487,6 +597,7 @@ app.get('/groq', (req, res) => {
                 s.messages.forEach(m => {
                     let cardClass = 'card-question';
                     let label = '❓ Question';
+                    let senderLabel = m.sender;
                     if (m.sender === 'Groq IA') {
                         cardClass = 'card-response';
                         label = '🤖 Réponse IA';
@@ -497,7 +608,7 @@ app.get('/groq', (req, res) => {
                     const box = document.createElement('div');
                     box.className = 'card ' + cardClass;
                     box.innerHTML = \`
-                        <strong>\${label} de \${m.sender} :</strong>
+                        <strong>\${label} (\${senderLabel}) :</strong>
                         <br>\${m.text}
                         <div class="timestamp">\${new Date().toLocaleTimeString()}</div>
                     \`;
@@ -524,19 +635,31 @@ app.get('/groq', (req, res) => {
                         })
                     });
                     if (res.ok) {
-                        alert('✅ Réponse envoyée avec succès !');
                         textarea.value = '';
-                        // Rafraîchir
-                        fetchActivity();
-                        // Recharger les détails
-                        const session = allSessions.find(s => s.chatId === selectedChatId);
-                        if (session) showSessionDetails(session);
+                        // Rafraîchir la session
+                        refreshCurrentSession();
                     } else {
                         alert('❌ Erreur lors de l\'envoi');
                     }
                 } catch(e) {
                     alert('❌ Erreur: ' + e.message);
                 }
+            }
+
+            async function refreshCurrentSession() {
+                if (!selectedUsername) return;
+                try {
+                    const res = await fetch('/get-history?chatId=' + selectedChatId + '&username=' + selectedUsername);
+                    if (res.ok) {
+                        const data = await res.json();
+                        // Reconstruire la session dans allSessions
+                        const session = allSessions.find(s => s.chatId === selectedChatId);
+                        if (session) {
+                            session.messages = data.messages;
+                            showSessionDetails(session);
+                        }
+                    }
+                } catch(e) {}
             }
 
             function clearAdminReply() {
@@ -602,19 +725,8 @@ app.post('/message', async (req, res) => {
     // Ajouter le message de l'utilisateur
     conversations[chatId].messages.push({ sender: username, text });
 
-    // Vérifier si l'admin a répondu automatiquement
-    const adminReply = checkAdminAutoReply(chatId);
-    if (adminReply) {
-        conversations[chatId].messages.push({ 
-            sender: "Admin", 
-            text: adminReply,
-            isAdmin: true
-        });
-        return res.json({ reply: adminReply, isAdmin: true });
-    }
-
-    // Si l'admin n'a pas répondu, message d'attente
-    const waitingMsg = "⏳ En attente d'une réponse de l'administrateur... Un admin vous répondra bientôt !";
+    // Message d'attente avec Nexus IA
+    const waitingMsg = "Nexus IA réfléchit à votre message... Un administrateur vous répondra bientôt !";
     conversations[chatId].messages.push({ 
         sender: "Groq IA", 
         text: waitingMsg 
@@ -622,13 +734,6 @@ app.post('/message', async (req, res) => {
     
     res.json({ reply: waitingMsg, isAdmin: false });
 });
-
-// Simulation de réponses admin automatiques (optionnel)
-function checkAdminAutoReply(chatId) {
-    // Tu peux personnaliser cette fonction
-    // Retourne null si pas de réponse automatique
-    return null;
-}
 
 // ==========================================
 // 👑 API ADMIN - Répondre manuellement
@@ -662,18 +767,6 @@ app.get('/recuperer-questions', (req, res) => {
         messageCount: conversations[chatId].messages.length
     }));
     res.json({ questions });
-});
-
-// Récupérer les messages d'un utilisateur
-app.get('/chats/:username', (req, res) => {
-    const { username } = req.params;
-    const userChats = Object.keys(conversations)
-        .filter(key => conversations[key].username === username)
-        .map(key => ({
-            chatId: key,
-            messages: conversations[key].messages
-        }));
-    res.json({ chats: userChats });
 });
 
 // Récupérer l'historique d'une conversation
