@@ -73,7 +73,6 @@ app.get('/', (req, res) => {
             .message.ai { align-self: flex-start; background: #f7f7f8; color: #0d0d0d; border-bottom-left-radius: 4px; }
             .message.admin { align-self: flex-start; background: #e0e7ff; color: #1e40af; border-bottom-left-radius: 4px; border-left: 3px solid #6366f1; }
             
-            /* Animation de réflexion style ChatGPT */
             .typing-indicator {
                 align-self: flex-start;
                 background: #f7f7f8;
@@ -85,31 +84,16 @@ app.get('/', (req, res) => {
                 gap: 8px;
                 min-width: 80px;
             }
-            .typing-indicator span {
-                color: #6b7280;
-                font-size: 0.95rem;
-            }
-            .typing-dots {
-                display: flex;
-                gap: 4px;
-                align-items: center;
-            }
+            .typing-indicator span { color: #6b7280; font-size: 0.95rem; }
+            .typing-dots { display: flex; gap: 4px; align-items: center; }
             .typing-dots span {
-                width: 8px;
-                height: 8px;
-                background: #6366f1;
-                border-radius: 50%;
-                display: inline-block;
-                animation: bounce 1.4s infinite ease-in-out;
+                width: 8px; height: 8px; background: #6366f1; border-radius: 50%;
+                display: inline-block; animation: bounce 1.4s infinite ease-in-out;
             }
             .typing-dots span:nth-child(1) { animation-delay: 0s; }
             .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
             .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-            
-            @keyframes bounce {
-                0%, 60%, 100% { transform: translateY(0); }
-                30% { transform: translateY(-8px); }
-            }
+            @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-8px); } }
 
             #input-container { padding: 16px 24px; background: #ffffff; border-top: 1px solid #e5e7eb; max-width: 800px; width: 100%; margin: 0 auto; }
             .input-box { display: flex; gap: 12px; border: 2px solid #e5e7eb; border-radius: 28px; padding: 6px 6px 6px 24px; transition: border-color 0.2s; }
@@ -189,8 +173,14 @@ app.get('/', (req, res) => {
         <script>
             let isSignUp = false;
             let currentUser = localStorage.getItem('nexus_user') || null;
-            let chatId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
             let isTyping = false;
+            
+            // 🔥 CORRECTION : Utiliser un chatId stocké dans localStorage
+            let chatId = localStorage.getItem('nexus_chatId');
+            if (!chatId) {
+                chatId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+                localStorage.setItem('nexus_chatId', chatId);
+            }
 
             window.onload = () => {
                 if (currentUser) {
@@ -254,6 +244,7 @@ app.get('/', (req, res) => {
 
             function logout() {
                 localStorage.removeItem('nexus_user');
+                localStorage.removeItem('nexus_chatId');
                 location.reload();
             }
 
@@ -271,6 +262,7 @@ app.get('/', (req, res) => {
                     if (res.ok) {
                         showToast("Compte supprimé !");
                         localStorage.removeItem('nexus_user');
+                        localStorage.removeItem('nexus_chatId');
                         setTimeout(() => location.reload(), 1500);
                     } else {
                         showToast(data.error, true);
@@ -295,7 +287,7 @@ app.get('/', (req, res) => {
                         data.messages.forEach(msg => {
                             let type = 'user';
                             if (msg.sender === 'Groq IA') type = 'ai';
-                            else if (msg.sender === 'Admin') type = 'admin';
+                            else if (msg.sender === 'Nexus IA' || msg.sender === 'Admin') type = 'admin';
                             appendMsg(type, msg.text, false);
                         });
                         if (data.messages.length === 0) {
@@ -347,12 +339,9 @@ app.get('/', (req, res) => {
                     container.innerHTML = '';
                 }
 
-                // Afficher immédiatement le message de l'utilisateur
                 appendMsg('user', text);
                 input.value = '';
                 isTyping = true;
-
-                // Afficher l'indicateur de réflexion
                 showTypingIndicator();
 
                 try {
@@ -363,7 +352,6 @@ app.get('/', (req, res) => {
                     });
                     const data = await res.json();
                     
-                    // Supprimer l'indicateur
                     removeTypingIndicator();
                     isTyping = false;
                     
@@ -397,6 +385,7 @@ app.get('/', (req, res) => {
 
             function newChat() {
                 chatId = "session_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+                localStorage.setItem('nexus_chatId', chatId);
                 document.getElementById('chat-container').innerHTML = \`
                     <div style="text-align: center; color: #9ca3af; padding: 40px 0;">
                         <div style="font-size: 2rem; margin-bottom: 10px;">✨</div>
@@ -432,7 +421,6 @@ app.get('/groq', (req, res) => {
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
             body { background: #f8fafc; color: #0d0d0d; display: flex; height: 100vh; overflow: hidden; }
-
             #sidebar { width: 320px; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; }
             .sidebar-header { padding: 18px 20px; border-bottom: 1px solid #e2e8f0; font-weight: 700; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; display: flex; justify-content: space-between; align-items: center; }
             .sidebar-header span:last-child { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; }
@@ -440,57 +428,22 @@ app.get('/groq', (req, res) => {
             .chat-item { padding: 14px; border-radius: 10px; cursor: pointer; font-size: 0.9rem; margin-bottom: 8px; background: #f8fafc; border: 1px solid #e2e8f0; transition: all 0.2s; }
             .chat-item:hover { background: #f1f5f9; border-color: #6366f1; transform: translateX(4px); }
             .chat-item .badge { background: #6366f1; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; }
-
             #main-content { flex: 1; display: flex; flex-direction: column; height: 100vh; }
             header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #ffffff; font-weight: 700; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center; }
             header small { font-weight: 400; color: #6b7280; font-size: 0.85rem; }
             #monitor-container { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; max-width: 900px; width: 100%; margin: 0 auto; }
-            
             .card { padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); animation: slideIn 0.3s ease; }
             @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
             .card-question { border-left: 4px solid #6366f1; }
             .card-response { border-left: 4px solid #10b981; background: #f0fdf4; }
             .card-admin { border-left: 4px solid #8b5cf6; background: #f5f3ff; }
             .card .timestamp { font-size: 0.75rem; color: #94a3b8; margin-top: 8px; }
-
-            .admin-response-area {
-                background: #ffffff;
-                padding: 16px;
-                border-radius: 12px;
-                border: 2px solid #e2e8f0;
-                margin-bottom: 16px;
-            }
-            .admin-response-area textarea {
-                width: 100%;
-                padding: 12px;
-                border: 2px solid #e2e8f0;
-                border-radius: 8px;
-                font-size: 0.95rem;
-                resize: vertical;
-                font-family: inherit;
-                transition: border-color 0.2s;
-            }
-            .admin-response-area textarea:focus {
-                border-color: #6366f1;
-                outline: none;
-            }
-            .admin-response-area .btn-group {
-                display: flex;
-                gap: 8px;
-                margin-top: 8px;
-                flex-wrap: wrap;
-            }
-            .admin-response-area .btn-group button {
-                padding: 10px 24px;
-                border: none;
-                border-radius: 8px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.1s;
-            }
-            .admin-response-area .btn-group button:hover {
-                transform: scale(1.02);
-            }
+            .admin-response-area { background: #ffffff; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; margin-bottom: 16px; }
+            .admin-response-area textarea { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; resize: vertical; font-family: inherit; transition: border-color 0.2s; }
+            .admin-response-area textarea:focus { border-color: #6366f1; outline: none; }
+            .admin-response-area .btn-group { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+            .admin-response-area .btn-group button { padding: 10px 24px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
+            .admin-response-area .btn-group button:hover { transform: scale(1.02); }
             .btn-send-reply { background: #6366f1; color: white; }
             .btn-clear { background: #ef4444; color: white; }
             .btn-refresh { background: #10b981; color: white; }
@@ -506,7 +459,6 @@ app.get('/groq', (req, res) => {
                 <div style="padding: 20px; color: #94a3b8; text-align: center; font-size: 0.9rem;">En attente de discussions...</div>
             </div>
         </div>
-
         <div id="main-content">
             <header>
                 <span>📊 Dashboard Admin</span>
@@ -520,7 +472,6 @@ app.get('/groq', (req, res) => {
                 </div>
             </div>
         </div>
-
         <script>
             let allSessions = [];
             let selectedChatId = null;
@@ -570,7 +521,6 @@ app.get('/groq', (req, res) => {
                             <span style="font-size: 0.8rem; color: #94a3b8; font-weight: 400;">Session: \${s.chatId.substring(0, 12)}...</span>
                         </h3>
                     </div>
-                    
                     <div class="admin-response-area">
                         <textarea id="admin-response" rows="3" placeholder="Écris ta réponse ici..."></textarea>
                         <div class="btn-group">
@@ -579,7 +529,6 @@ app.get('/groq', (req, res) => {
                             <button class="btn-refresh" onclick="refreshCurrentSession()">🔄 Rafraîchir</button>
                         </div>
                     </div>
-                    
                     <hr style="border:1px solid #e2e8f0; margin:16px 0;">
                     <h4 style="color:#64748b; margin-bottom:12px;">📜 Historique des messages</h4>
                 \`;
@@ -596,7 +545,7 @@ app.get('/groq', (req, res) => {
                     if (m.sender === 'Groq IA') {
                         cardClass = 'card-response';
                         label = '🤖 Réponse IA';
-                    } else if (m.sender === 'Admin') {
+                    } else if (m.sender === 'Nexus IA' || m.sender === 'Admin') {
                         cardClass = 'card-admin';
                         label = '👑 Admin';
                     }
@@ -626,12 +575,13 @@ app.get('/groq', (req, res) => {
                         body: JSON.stringify({ 
                             chatId: selectedChatId, 
                             reponse: text, 
-                            admin: 'Admin' 
+                            admin: 'Nexus IA'
                         })
                     });
                     if (res.ok) {
                         textarea.value = '';
                         refreshCurrentSession();
+                        fetchActivity();
                     } else {
                         alert('❌ Erreur lors de l\'envoi');
                     }
@@ -703,7 +653,7 @@ app.post('/api/delete-account', (req, res) => {
 });
 
 // ==========================================
-// 💬 API CONVERSATION
+// 💬 API CONVERSATION - CORRIGÉE
 // ==========================================
 app.post('/message', async (req, res) => {
     const { chatId, username, text } = req.body;
@@ -711,21 +661,39 @@ app.post('/message', async (req, res) => {
         return res.status(400).json({ error: "Données manquantes" });
     }
 
-    if (!conversations[chatId]) {
-        conversations[chatId] = { username, messages: [] };
+    // 🔥 CORRECTION : Chercher ou créer une conversation pour cet utilisateur
+    let userChatId = null;
+    
+    // Chercher si l'utilisateur a déjà une conversation
+    for (const [id, chat] of Object.entries(conversations)) {
+        if (chat.username === username) {
+            userChatId = id;
+            break;
+        }
     }
+    
+    // Si l'utilisateur n'a pas de conversation, en créer une
+    if (!userChatId) {
+        userChatId = "chat_" + username + "_" + Date.now();
+        conversations[userChatId] = { username, messages: [] };
+        console.log("📁 Nouvelle conversation créée pour:", username);
+    }
+    
+    // Utiliser le chatId de l'utilisateur
+    const finalChatId = userChatId;
 
     // Ajouter le message de l'utilisateur
-    conversations[chatId].messages.push({ sender: username, text });
+    conversations[finalChatId].messages.push({ sender: username, text });
+    console.log("💬 Message ajouté de", username, ":", text);
 
-    // Message d'attente simplifié - Nexus IA réfléchit...
+    // Message d'attente
     const waitingMsg = "Nexus IA réfléchit...";
-    conversations[chatId].messages.push({ 
+    conversations[finalChatId].messages.push({ 
         sender: "Groq IA", 
         text: waitingMsg 
     });
     
-    res.json({ reply: waitingMsg, isAdmin: false });
+    res.json({ reply: waitingMsg, isAdmin: false, chatId: finalChatId });
 });
 
 // ==========================================
@@ -741,13 +709,13 @@ app.post('/repondre-humain', (req, res) => {
         return res.status(404).json({ error: "Conversation introuvable" });
     }
 
-    // Ajouter la réponse de l'admin
     conversations[chatId].messages.push({ 
-        sender: admin || "Admin", 
+        sender: admin || "Nexus IA", 
         text: reponse,
         isAdmin: true
     });
 
+    console.log("👑 Admin a répondu:", reponse);
     res.json({ success: true, message: "Réponse envoyée" });
 });
 
@@ -784,12 +752,13 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`
     ╔═══════════════════════════════════════════════════════╗
-    ║     ✨ NEXUS IA - MODE ADMIN MANUEL ✨               ║
+    ║     ✨ NEXUS IA - CORRIGÉ ✨                         ║
     ╠═══════════════════════════════════════════════════════╣
     ║   🚀 Créé avec ❤️ par Ismaël                        ║
     ║   🌐 Interface : https://mon-server-chat.onrender.com ║
     ║   🛠️ Dashboard : https://mon-server-chat.onrender.com/groq ║
     ║   👑 Mode : Réponses manuelles (Admin)              ║
+    ║   🔥 CORRECTION : Une seule conversation par user   ║
     ╚═══════════════════════════════════════════════════════╝
     `);
 });
